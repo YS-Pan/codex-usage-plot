@@ -1,0 +1,32 @@
+name: 问题反馈
+description: 报告安装、运行或统计问题
+body:
+  - type: markdown
+    attributes:
+      value: 请先查看 README 的常见问题。请勿上传原始会话日志；数据文件和错误日志中的任务标题、路径、会话 ID 也请先隐去。
+  - type: textarea
+    id: environment
+    attributes:
+      label: 使用环境
+      description: 操作系统、Python 版本，以及使用双击启动还是命令行。
+      placeholder: Windows 11 / Python 3.13 / 双击启动用量统计.cmd
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤与预期结果
+      description: 执行了哪些步骤，原本希望看到什么，实际发生了什么？
+    validations:
+      required: true
+  - type: textarea
+    id: errors
+    attributes:
+      label: 已脱敏的错误信息
+      description: 可粘贴终端报错或 gui_run.log 的相关错误段落。
+      render: text
+  - type: textarea
+    id: demo
+    attributes:
+      label: 演示模式是否正常
+      description: 如方便，可运行 python -m codex_usage demo，并说明能否生成图表；演示不需要真实日志。

@@ -1,0 +1,17 @@
+name: 功能建议
+description: 提出改进使用体验或统计展示的建议
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 希望解决的问题
+      description: 描述使用场景，以及目前哪一步不方便。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望的行为
+      description: 可以给出不包含个人数据的示意或示例。
+    validations:
+      required: true
