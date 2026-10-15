@@ -1,0 +1,39 @@
+# 本地 Python 环境与运行缓存
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 含本地使用记录的生成图片、数据文件与统计数据库
+/codex_usage_report/*
+!/codex_usage_report/02_cumulative_tokens.png
+!/codex_usage_report/10_daily_running_time.png
+/codex_usage_cache.sqlite3*
+/codex_usage_demo/
+/codex_usage_settings.json
+/report/
+
+# 意外复制到仓库的原始日志和自定义统计缓存
+*.jsonl
+*.jsonl.zst
+*.sqlite3*
+
+# 临时运行目录与日志
+/.task-tmp/
+/.runtime-deps/
+*.log
+
+# 本机环境配置
+.env
+.env.*
+!.env.example
+
+# 编辑器与操作系统文件
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
