@@ -33,6 +33,7 @@ CHART_NAMES = {
     10: "10_daily_running_time", 11: "11_daily_cache_miss_rate",
     12: "12_recent_hourly_tokens", 13: "13_recent_hourly_api_cost",
 }
+END_HOLD_SECONDS = 1
 
 
 @dataclass(frozen=True)
@@ -91,7 +92,7 @@ def write_mp4(
     frames: Iterable[Image.Image], path: Path, size: tuple[int, int], fps: int,
     executable: str,
 ) -> None:
-    """Stream fixed-size RGB frames; replace the previous video only on success."""
+    """Stream RGB frames, hold the last image, and replace only on success."""
     staged: Path | None = None
     process: subprocess.Popen | None = None
     try:
@@ -109,15 +110,20 @@ def write_mp4(
             )
             try:
                 count = 0
+                final_frame: bytes | None = None
                 resampling = getattr(Image, "Resampling", Image)  # Pillow 8 is allowed by Matplotlib 3.8.
                 for frame in frames:
                     with frame:
                         fitted = ImageOps.pad(frame, size, color="white", method=resampling.LANCZOS)
                         try:
-                            process.stdin.write(fitted.tobytes())
+                            final_frame = fitted.tobytes()
+                            process.stdin.write(final_frame)
                         finally:
                             fitted.close()
                     count += 1
+                if final_frame is not None:
+                    for _ in range(fps * END_HOLD_SECONDS):
+                        process.stdin.write(final_frame)
                 process.stdin.close()
                 process.wait(timeout=30)
                 if process.returncode or count == 0:
@@ -288,14 +294,17 @@ def export_animations(
         path = output_dir / f"{CHART_NAMES[number]}.mp4"
         width = int(14 * options.dpi) // 2 * 2
         height = int(max(8, 0.58 * top_threads + 2.8) * options.dpi if number == 6 else 8 * options.dpi) // 2 * 2
-        print(f"Animation {number:02d}: {dates[0]:%Y-%m-%d} → {dates[-1]:%Y-%m-%d} ({len(dates)} frames)", flush=True)
+        print(f"Animation {number:02d}: {dates[0]:%Y-%m-%d} → {dates[-1]:%Y-%m-%d} "
+              f"({len(dates)} snapshots + {END_HOLD_SECONDS}s final hold)", flush=True)
         frames = (renderer.render(number, stamp) for stamp in dates)
         write_mp4(frames, path, (width, height), options.fps, executable)
         results.append({
             "chart": number, "file": path.name, "format": "mp4", "codec": "h264",
             "start_date": dates[0].date().isoformat(), "end_date": dates[-1].date().isoformat(),
             "timezone": str(target_tz), "frames": len(dates), "fps": options.fps,
-            "duration_seconds": len(dates) / options.fps,
+            "encoded_frames": len(dates) + options.fps * END_HOLD_SECONDS,
+            "end_hold_seconds": END_HOLD_SECONDS,
+            "duration_seconds": len(dates) / options.fps + END_HOLD_SECONDS,
             "model_colors": {model: to_hex(color) for model, color in renderer.model_colors.items()},
         })
         if options.gif:

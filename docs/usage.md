@@ -69,7 +69,7 @@ python -m codex_usage cost --events report/events.csv --output report
 
 ## 动画
 
-GUI「更新图片」和 CLI `report` 默认额外生成 `02_cumulative_tokens.mp4`，其余动画默认不生成。默认第一帧为 30 天前、最后一帧为今天，共 31 帧；每天推进一帧，4 帧/秒，约 7.75 秒。静态图片继续正常生成，MP4 与图片放在同一结果目录。
+GUI「更新图片」和 CLI `report` 默认额外生成 `02_cumulative_tokens.mp4`，其余动画默认不生成。默认第一帧为 30 天前、最后一帧为今天，共 31 个日期快照；每天推进一帧，4 帧/秒，末尾再保持最后画面一秒，总长约 8.75 秒。静态图片继续正常生成，MP4 与图片放在同一结果目录。
 
 其他动画通常交给 AI agent 按需生成，例如：“请从现有结果生成图 6 最近 30 天的 MP4 动画。”支持 01–13 全部编号，可以使用已有数据文件，无需再次扫描日志或更新静态图片：
 
@@ -82,7 +82,7 @@ python -m codex_usage animate --chart 2 --gif
 
 `animate --output` 指定**已有** `events.csv` 和 `summary.json` 的结果目录，也将动画写到那里。10 图还需要 `running_intervals.csv`。时区沿用汇总文件；使用已有数据文件时，只能重放其中保留的记录。如需最新数据，先运行 `report` 或点击「更新图片」。可用 `--dpi` 调整动画分辨率，`--top-threads` 调整 06 图的任务数量。
 
-`--gif` 会在 MP4 之外生成同名 GIF，适合在 GitHub README 中直接循环播放。GIF 复用 MP4 的帧、坐标缩放和播放速度，整个动图使用统一调色板。日常「更新图片」仍默认只生成图 2 的 MP4；GIF 按需导出。
+`--gif` 会在 MP4 之外生成同名 GIF，适合在 GitHub README 中直接循环播放。GIF 复用 MP4 的帧、坐标缩放和播放速度，末尾同样额外停留一秒后再循环，整个动图使用统一调色板。日常「更新图片」仍默认只生成图 2 的 MP4；GIF 按需导出。
 
 重新读取日志并同时生成指定动画，或暂时跳过所有动画：
 

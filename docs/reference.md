@@ -32,4 +32,4 @@ GUI 会顺序生成用量与费用图片，并导出数据文件。CLI 需分别
 
 01、06、12 图沿用 02 图的模型配色和堆叠顺序：auto-review 在最上层（横条中为最右侧），其余模型按所选时段的首次出现时间排列；06 的任务子集和 12 的最近七日窗口沿用整个所选时段的颜色，不重新分配。保留 `unknown` 等记录中的模型名称，不合并为 `other`；06、12 的图例仅列出当前图片中有用量的模型。13 图沿用相同的模型配色和顺序，仅显示有记录单价且在当前图片中产生费用的模型。
 
-费用脚本另生成 09 图和费用明细，见 [API 费用估算](api-cost.md)。`summary.json` 的 `charts` 列出 `report` 生成的静态图片，包含 13 图；09 静态图片由费用脚本单独管理。`animations` 列出本次 `report` 生成的动画；`animate` 单独运行时更新所选编号的条目并保留其他条目，每项包括 `chart`、`file`、`format`、`codec`、`start_date`、`end_date`、`timezone`、`frames`、`fps`、`duration_seconds` 和固定的 `model_colors`。日期为首尾快照的本地日期，时长单位为秒。
+费用脚本另生成 09 图和费用明细，见 [API 费用估算](api-cost.md)。`summary.json` 的 `charts` 列出 `report` 生成的静态图片，包含 13 图；09 静态图片由费用脚本单独管理。`animations` 列出本次 `report` 生成的动画；`animate` 单独运行时更新所选编号的条目并保留其他条目，每项包括 `chart`、`file`、`format`、`codec`、`start_date`、`end_date`、`timezone`、`frames`、`encoded_frames`、`fps`、`end_hold_seconds`、`duration_seconds` 和固定的 `model_colors`。日期为首尾快照的本地日期，`frames` 为日期快照数，`encoded_frames` 包含末尾静止的一秒所用的重复帧；`end_hold_seconds` 为额外停留秒数，`duration_seconds` 为包含停留的总播放秒数。

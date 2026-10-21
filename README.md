@@ -4,7 +4,7 @@
 
 ![累计 token 用量动画](codex_usage_report/02_cumulative_tokens.gif)
 
-[查看或下载 MP4 版本](codex_usage_report/02_cumulative_tokens.mp4)。动画按日推进，坐标轴随当时数据缩放，模型颜色始终一致。
+[查看或下载 MP4 版本](codex_usage_report/02_cumulative_tokens.mp4)。动画按日推进，坐标轴随当时数据缩放，模型颜色始终一致，末尾额外停留一秒。
 
 <details>
 <summary>查看累计用量静态图片</summary>

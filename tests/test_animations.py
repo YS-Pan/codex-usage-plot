@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib.colors import to_hex
+import numpy as np
 import pandas as pd
 from PIL import Image
 
@@ -165,14 +166,18 @@ class AnimationTests(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             results = animations.export_animations(events, [], self.output, self.zone, date(2026, 10, 1), options, observed_at=self.observed)
         self.assertEqual([item["file"] for item in results], ["02_cumulative_tokens.mp4"])
-        self.assertEqual(results[0]["duration_seconds"], 1)
+        self.assertEqual(results[0]["frames"], 3)
+        self.assertEqual(results[0]["encoded_frames"], 6)
+        self.assertEqual(results[0]["end_hold_seconds"], 1)
+        self.assertEqual(results[0]["duration_seconds"], 2)
         path = self.output / results[0]["file"]
         reader = imageio_ffmpeg.read_frames(str(path))
         try:
             metadata = next(reader)
             self.assertIn("h264", metadata["codec"])
             self.assertEqual(metadata["size"], (420, 240))
-            self.assertEqual(len(list(reader)), 3)
+            self.assertEqual(len(list(reader)), 6)
+            self.assertAlmostEqual(metadata["duration"], 2)
         finally:
             reader.close()
         previous = path.read_bytes()
@@ -186,6 +191,27 @@ class AnimationTests(unittest.TestCase):
         self.assertEqual(path.read_bytes(), previous)
         self.assertEqual(list(self.output.glob(".animation-*")), [])
 
+    def test_final_image_is_held_for_an_extra_second_at_different_frame_rates(self):
+        import imageio_ffmpeg
+
+        self.output.mkdir(parents=True)
+        for fps in (1, 4):
+            with self.subTest(fps=fps):
+                path = self.output / f"hold-{fps}.mp4"
+                frames = (Image.new("RGB", (40, 20), color) for color in ("red", "blue"))
+                animations.write_mp4(frames, path, (40, 20), fps, animations.ffmpeg_executable())
+                reader = imageio_ffmpeg.read_frames(str(path))
+                try:
+                    metadata = next(reader)
+                    decoded = [np.frombuffer(frame, dtype=np.uint8).astype(np.int16) for frame in reader]
+                finally:
+                    reader.close()
+                self.assertEqual(len(decoded), 2 + fps)
+                self.assertAlmostEqual(metadata["duration"], 2 / fps + 1)
+                self.assertGreater(np.abs(decoded[0] - decoded[1]).mean(), 100)
+                for frame in decoded[2:]:
+                    self.assertLess(np.abs(frame - decoded[1]).mean(), 1)
+
     def test_optional_gif_loops_with_the_mp4_frame_count_and_preserves_old_file_on_failure(self):
         events = synthetic_events([("2026-10-20T00:00:00Z", "old", 1000)])
         options = animations.AnimationOptions(start=date(2026, 10, 19), end=date(2026, 10, 21),
@@ -198,10 +224,21 @@ class AnimationTests(unittest.TestCase):
         with Image.open(gif_path) as image:
             self.assertEqual(image.format, "GIF")
             self.assertTrue(image.is_animated)
-            self.assertEqual(image.n_frames, 3)
+            self.assertEqual(image.n_frames, 7)
             self.assertEqual(image.info["loop"], 0)
             self.assertEqual(image.info["duration"], 250)
             self.assertEqual(image.size, (420, 240))
+            decoded = []
+            durations = []
+            for index in range(image.n_frames):
+                image.seek(index)
+                durations.append(image.info["duration"])
+                decoded.append(np.asarray(image.convert("RGB")).astype(np.int16))
+            self.assertEqual(sum(durations), 1750)
+            for frame in decoded[3:]:
+                self.assertLess(np.abs(frame - decoded[2]).mean(), 1)
+        self.assertEqual(results[1]["duration_seconds"], 1.75)
+        self.assertEqual(results[1]["end_hold_seconds"], 1)
         self.assertEqual(results[0]["model_colors"], results[1]["model_colors"])
         previous = gif_path.read_bytes()
         failure = subprocess.CalledProcessError(1, "synthetic-ffmpeg", stderr=b"synthetic encoder error")
