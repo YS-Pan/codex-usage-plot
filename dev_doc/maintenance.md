@@ -60,6 +60,6 @@ CLI / 统计测试无需桌面显示；GUI 人工验收需要 Tcl/Tk 和桌面�
 
 文档保持单一来源：涉及计算规则时从用户页面链接到统计文档；涉及单价时链接到费用说明。无需为每个源码文件另建说明页，也无需为小改动建立独立历史文档。
 
-README 直接引用 `codex_usage_report/` 中的 `02_cumulative_tokens.png` 和 `10_daily_running_time.png`。这两张作者确认公开的真实用量图片通过正常生成流程更新，不另建预览图片或复制文件；其余生成结果仍忽略。测试和自动验收继续使用合成数据。
+README 直接引用 `codex_usage_report/` 中的 `02_cumulative_tokens.png` 和 `10_daily_running_time.png`，GitHub 保留现有版本。本地图片继续通过正常生成流程更新；以后提交、push 和 GitHub 插件上传都排除这两张图片的修改，不再反复询问上传授权。原因及暂存方法集中维护在 [贡献说明](../CONTRIBUTING.md#提交内容)。不另建预览图片或复制文件；其余生成结果仍忽略，测试和自动验收继续使用合成数据。
 
 提交前检查 `git status --short` 与最终 diff，避免纳入 JSONL、SQLite、本机设置和其他个人数据文件。默认忽略规则不覆盖所有任意命名的自定义输出目录。

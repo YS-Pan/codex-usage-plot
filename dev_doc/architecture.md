@@ -92,4 +92,4 @@ GUI 的结果路径锚定工具目录；CLI 默认输出相对当前工作目录
 
 移动代码目录不改变本地数据的位置：GUI、环境准备和默认缓存都从包目录向上定位项目根目录，继续使用原来的 `.venv`、`codex_usage_report/`、`codex_usage_cache.sqlite3` 与设置文件。
 
-README 直接引用输出目录中的 `02_cumulative_tokens.png` 和 `10_daily_running_time.png`，不另建预览图片。这两张图片是作者确认公开的真实用量结果，其他生成文件仍由 `.gitignore` 排除。
+README 直接引用输出目录中的 `02_cumulative_tokens.png` 和 `10_daily_running_time.png`，不另建预览图片。GitHub 保留两张图片的现有版本；本地生成流程继续更新它们，后续修改按 [贡献说明](../CONTRIBUTING.md#提交内容) 排除提交与上传。其他生成文件仍由 `.gitignore` 排除。
