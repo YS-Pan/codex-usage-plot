@@ -7,6 +7,7 @@
 README 首先面向决定是否安装的用户，优先展示真实用量图片；安装和环境准备面向 AI agent，步骤集中在 `docs/installation.md`；日常使用面向手动打开 GUI 的用户，主操作为增量「更新图片」。面向用户统一使用「图片」称呼，CSV / JSON 称为数据文件；保留既有命令与文件名。开发参考从 [dev_doc/README.md](dev_doc/README.md) 进入，详细技术说明维护在对应专题中。
 
 - `codex_usage/charts.py`：流式解析 rollout JSONL 元数据，聚合 token 用量，导出图表、CSV 和 `summary.json`。
+- `codex_usage/animations.py`、`tests/test_animations.py`：按日期重放图片并生成 MP4；默认仅生成 02 动画，其余编号按需生成，整个动画固定模型颜色。
 - `codex_usage/running_time.py`：解析回合运行区间、去重、按本地日期拆分并计算合并和相加时长。
 - `codex_usage/cost.py`：基于逐请求用量和记录的单价计算 API 费用估算。
 - `codex_usage/gui.py`、`启动用量统计.cmd`：Windows GUI 与启动器。
@@ -16,7 +17,7 @@ README 首先面向决定是否安装的用户，优先展示真实用量图片�
 - `codex_usage/__main__.py`、`tests/test_cli.py`：统一命令入口、参数传递与目录定位验证。
 - `codex_usage_report/`：生成结果，包含本地使用记录；修改生成逻辑后通过脚本更新，避免手工修补输出结果。
 
-README 直接引用 `codex_usage_report/02_cumulative_tokens.png` 和 `codex_usage_report/10_daily_running_time.png`，不创建单独的预览图片或生成脚本。GitHub 保留这两张图片的现有版本；以后本地正常生成和更新，但所有提交、push 及 GitHub 插件上传均排除它们的后续修改，也不再反复询问上传授权。此约定用于减少自动审批带来的操作负担，作者明确表示原因并非图片内容敏感。两张图片已经被 Git 跟踪，不能依赖 `.gitignore` 屏蔽更新；提交方法见 [贡献说明](CONTRIBUTING.md#提交内容)。其余生成结果继续忽略，测试和演示使用合成数据。
+README 直接引用 `codex_usage_report/02_cumulative_tokens.png` 和 `codex_usage_report/10_daily_running_time.png`，不创建单独的预览图片或生成脚本。GitHub 保留这两张图片的现有版本；以后本地正常生成和更新，但所有提交、push 及 GitHub 插件上传均排除它们的后续修改，也不再反复询问上传授权。此约定用于减少自动审批带来的操作负担，作者明确表示原因并非图片内容敏感。两张图片已经被 Git 跟踪，不能依赖 `.gitignore` 屏蔽更新；提交方法见 [贡献说明](CONTRIBUTING.md#提交内容)。图 2 的 `02_cumulative_tokens.mp4` 作为 README 动画示例一同跟踪；上述排除更新约定继续适用于两张 PNG。其余生成结果继续忽略，测试和演示使用合成数据。
 
 ## 运行与验证
 

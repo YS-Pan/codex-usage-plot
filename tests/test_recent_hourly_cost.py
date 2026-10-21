@@ -215,7 +215,7 @@ class RecentHourlyCostTests(unittest.TestCase):
                         result = report_main([
                             "--codex-home", str(home), "--output", str(output), "--quiet",
                             "--cache-file", str(home / "cache.sqlite3"), "--timezone", "Asia/Shanghai",
-                            "--start", "2026-10-01", "--dpi", "40", "--format", "svg", *end_arguments,
+                            "--start", "2026-10-01", "--dpi", "40", "--format", "svg", "--no-animations", *end_arguments,
                         ])
                     self.assertEqual(result, 0)
                     path = output / "recent_hourly_api_cost.csv"

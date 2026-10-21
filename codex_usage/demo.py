@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 from .charts import collect_usage_data, export_report
 from .cost import main as estimate_cost
+from .animations import AnimationOptions
 
 
 START = date(2026, 9, 14)
@@ -83,7 +84,8 @@ def main(argv: list[str] | None = None) -> int:
         target_tz = ZoneInfo("Asia/Shanghai")
         events, intervals, stats = collect_usage_data(home, target_tz, progress=False)
         export_report(events, stats, output, target_tz, "png", 120, 10,
-                      running_intervals=intervals, start=START, end=END)
+                      running_intervals=intervals, start=START, end=END,
+                      animation=AnimationOptions(end=END))
     estimate_cost(["--events", str(output / "events.csv"), "--output", str(output), "--dpi", "120"])
     print(f"\n演示图片与数据文件已生成：{output}\n所有数据均为合成数据，未读取本机日志或统计缓存。")
     return 0

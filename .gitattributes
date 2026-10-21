@@ -8,3 +8,4 @@ requirements.txt text eol=lf
 *.yml text eol=lf
 *.png binary
 *.jpg binary
+*.mp4 binary

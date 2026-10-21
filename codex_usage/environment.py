@@ -19,9 +19,10 @@ ENV_PYTHON = ENV_DIR / ("Scripts/python.exe" if os.name == "nt" else "bin/python
 ENV_CHECK = """
 import sys
 assert sys.version_info >= (3, 10), '需要 Python 3.10 或更新版本'
-import matplotlib, numpy, pandas
+import matplotlib, numpy, pandas, imageio_ffmpeg
+imageio_ffmpeg.get_ffmpeg_exe()
 from importlib.metadata import version
-for package, minimum in [('matplotlib', (3, 8)), ('numpy', (1, 26)), ('pandas', (2, 0))]:
+for package, minimum in [('matplotlib', (3, 8)), ('numpy', (1, 26)), ('pandas', (2, 0)), ('imageio-ffmpeg', (0, 6))]:
     actual = tuple(int(part) for part in version(package).split('.')[:2])
     assert actual >= minimum, package + ' 版本过旧'
 if sys.version_info >= (3, 14):

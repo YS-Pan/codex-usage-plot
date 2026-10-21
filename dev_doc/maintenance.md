@@ -16,6 +16,7 @@ CLI / 统计测试无需桌面显示；GUI 人工验收需要 Tcl/Tk 和桌面�
 | 回合起止与跨日运行时间 | `codex_usage/running_time.py` | `tests/test_codex_running_time.py`；覆盖重叠、重复、跨午夜、夏令时和未完成回合 |
 | 增量缓存或压缩读取 | `codex_usage/cache.py`、`collect_cached_usage_data`、`rollout_lines` | `tests/test_codex_usage_cache.py`；与完整读取对比，检查追加、半行、替换、移动、删除和回滚 |
 | 新统计、字段或图表 | `aggregate_*`、`plot_*`、`export_report` | 相关合成数据测试；生成并查看正常、空闲和无数据图 |
+| 动画、模型配色或 MP4 编码 | `codex_usage/animations.py`、绘图函数的固定颜色参数、`figure_sink` | `tests/test_animations.py`；检查新模型与排名反转、空白帧、跨日截断、真实 MP4 解码及失败保留旧视频；运行 demo 并查看首、中、末帧 |
 | 费用估算 | `codex_usage/cost.py` | `tests/test_codex_usage_charts.py` 中费用相关测试；校验未知模型、长上下文阈值和缓存写入 |
 | 启动、选项和错误处理 | 启动器、`codex_usage/environment.py`、`codex_usage/gui.py` | `tests/test_user_entrypoints.py`；实际启动、生成、停止以及错误后重试 |
 | 包结构、命令入口和默认路径 | `codex_usage/__main__.py`、各模块的路径常量 | `tests/test_cli.py`；无依赖帮助、参数传递、源码根目录定位和标准 unittest 自动发现 |

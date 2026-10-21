@@ -104,7 +104,7 @@ def generate_reports(
         environment.update(PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
         steps = [
             (
-                "1/2 · 增量读取并生成图表…" if incremental else "1/2 · 全部读取并生成图表…",
+                "1/2 · 增量读取并生成图片与动画…" if incremental else "1/2 · 全部读取并生成图片与动画…",
                 "report",
                 usage_arguments(output_dir, options, incremental),
             ),

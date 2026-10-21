@@ -409,12 +409,13 @@ def plot_recent_hourly_cost(
     output_dir: Path,
     image_format: str,
     dpi: int,
+    *, model_colors: dict[str, Any] | None = None,
 ) -> Path:
     configure_matplotlib()
     figure, axis = plt.subplots(figsize=(14, 5.5))
     hours = hourly["hour_start"]
     bottom = np.zeros(len(hourly), dtype=float)
-    for model, color in model_stack_colors(events).items():
+    for model, color in (model_colors if model_colors is not None else model_stack_colors(events)).items():
         column = f"model_{model}_cost_usd"
         if column not in hourly:
             continue

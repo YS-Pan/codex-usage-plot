@@ -10,6 +10,7 @@ import sys
 COMMANDS = {
     "gui": "gui",
     "report": "charts",
+    "animate": "animations",
     "cost": "cost",
     "demo": "demo",
     "setup": "environment",
@@ -26,6 +27,7 @@ def main(argv: list[str] | None = None) -> int:
             "常用命令：\n"
             "  python -m codex_usage gui       打开中文窗口\n"
             "  python -m codex_usage report    生成用量图片与数据文件\n"
+            "  python -m codex_usage animate   按编号从已有数据文件生成 MP4 动画\n"
             "  python -m codex_usage cost      根据 events.csv 估算费用\n"
             "  python -m codex_usage demo      使用合成数据体验图片生成\n"
             "  python -m codex_usage setup     准备本项目的 .venv 环境\n"

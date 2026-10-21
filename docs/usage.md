@@ -7,7 +7,7 @@
 安装通常只需进行一次，可以交给 AI agent 按 [安装指南](installation.md) 完成。日常双击 Windows 的 `启动用量统计.cmd`，或在装好依赖的环境运行 `python -m codex_usage gui`。
 
 1. 点击 **「更新图片」**：首次自动完整读取以建立缓存，之后复用未变化的日志。图片每次都会重新生成。
-2. 更新完成后点击 **「打开图片文件夹」**，在其中选择需要的图片、CSV 或汇总文件。
+2. 更新完成后点击 **「打开图片文件夹」**，在其中选择需要的图片、MP4 动画、CSV 或汇总文件。默认只额外生成图 2 的动画。
 
 通常无需调整选项。要更换数据来源或排查问题，展开 **「设置」**：
 
@@ -59,8 +59,38 @@ python -m codex_usage cost --events report/events.csv --output report
 | `--incremental` | 增量扫描，缓存缺失时自动完整读取 |
 | `--cache-file PATH` | 缓存位置，默认工具目录中的 `codex_usage_cache.sqlite3` |
 | `--quiet` | 隐藏扫描进度 |
+| `--animations NUMBER ...` | 需要生成动画的图片编号，默认仅 `2`；例如 `--animations 2 6` |
+| `--no-animations` | 本次只更新静态图片和数据文件，不生成动画 |
+| `--animation-start / --animation-end` | 动画首尾本地日期；默认从 30 天前到今天，指定统计 `--end` 时动画也默认结束于该日期 |
+| `--animation-fps NUMBER` | 每秒帧数，默认 4；每帧推进一个本地日 |
+| `--animation-dpi NUMBER` | 动画 DPI，默认 100，与 `--format`、静态图片 DPI 独立 |
 
 查看完整参数：`python -m codex_usage report --help`、`python -m codex_usage cost --help`。
+
+## 动画
+
+GUI「更新图片」和 CLI `report` 默认额外生成 `02_cumulative_tokens.mp4`，其余动画默认不生成。默认第一帧为 30 天前、最后一帧为今天，共 31 帧；每天推进一帧，4 帧/秒，约 7.75 秒。静态图片继续正常生成，MP4 与图片放在同一结果目录。
+
+其他动画通常交给 AI agent 按需生成，例如：“请从现有结果生成图 6 最近 30 天的 MP4 动画。”支持 01–13 全部编号，可以使用已有数据文件，无需再次扫描日志或更新静态图片：
+
+```sh
+python -m codex_usage animate --chart 6
+python -m codex_usage animate --chart 2 8 --start 2026-09-01 --end 2026-09-30 --fps 4
+python -m codex_usage animate --chart 12 --output report
+```
+
+`animate --output` 指定**已有** `events.csv` 和 `summary.json` 的结果目录，也将动画写到那里。10 图还需要 `running_intervals.csv`。时区沿用汇总文件；使用已有数据文件时，只能重放其中保留的记录。如需最新数据，先运行 `report` 或点击「更新图片」。可用 `--dpi` 调整动画分辨率，`--top-threads` 调整 06 图的任务数量。
+
+重新读取日志并同时生成指定动画，或暂时跳过所有动画：
+
+```sh
+python -m codex_usage report --timezone Asia/Shanghai --incremental --animations 2 6
+python -m codex_usage report --timezone Asia/Shanghai --incremental --no-animations
+```
+
+动画按日显示截至该日的统计，起始日前的累计量保留；空闲日也显示，最后一天只使用当前时刻已记录的数据。整个动画预先固定模型颜色及堆叠顺序，与对应静态图片配色一致。详细口径见 [动画快照](../dev_doc/statistics.md#动画快照)。选择不生成某个动画时，目录中以前生成的 MP4 会保留。
+
+MP4 使用 H.264 编码。动画依赖随 `requirements.txt` 安装，常见平台无需另行配置 FFmpeg；旧环境运行 `python -m codex_usage setup` 补齐依赖。生成失败会保留同名旧动画，错误显示在终端或 GUI 运行日志中。
 
 ## 增量缓存
 
@@ -80,6 +110,6 @@ python -m codex_usage demo
 
 未激活环境时，Windows 使用 `.\.venv\Scripts\python.exe -m codex_usage demo`，macOS / Linux 使用 `.venv/bin/python -m codex_usage demo`。
 
-演示会在 `codex_usage_demo/` 生成全部 12 张图和数据表，使用固定的合成会话、时间与 token 计数。它不读取真实 Codex 目录，也不改动正式输出或统计缓存。重复运行可刷新演示；自定义位置使用 `--output` 指定空目录。
+演示会在 `codex_usage_demo/` 生成全部图片、图 2 的 MP4 和数据表，使用固定的合成会话、时间与 token 计数。演示动画以合成数据的结束日期为终点，不随运行日期变化。它不读取真实 Codex 目录，也不改动正式输出或统计缓存。重复运行可刷新演示；自定义位置使用 `--output` 指定空目录。
 
 README 的公开预览来自作者的真实聚合统计，`demo` 的输出则专门用于体验、安装验证和开发测试。

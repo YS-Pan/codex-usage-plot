@@ -1,5 +1,6 @@
 matplotlib>=3.8
 numpy>=1.26
 pandas>=2.0
+imageio-ffmpeg>=0.6
 backports.zstd>=1.0; python_version < "3.14"
 tzdata; sys_platform == "win32"

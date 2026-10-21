@@ -58,7 +58,7 @@ if ($LASTEXITCODE -ne 0) { throw '环境检查失败，请检查依赖和 Tkinte
 if ($LASTEXITCODE -ne 0) { throw '演示图片生成失败，请检查上方错误。' }
 ```
 
-`check` 检查依赖、时区支持、压缩日志支持与 Tkinter，不会创建窗口。不要在安装验收中使用 `setup --launch` 或 `gui`；用户随后手动启动即可。
+`check` 检查依赖、MP4 编码器、时区支持、压缩日志支持与 Tkinter，不会创建窗口。动画使用 `imageio-ffmpeg` 随常见平台安装包提供的 FFmpeg；首次安装依赖需要下载该组件。不要在安装验收中使用 `setup --launch` 或 `gui`；用户随后手动启动即可。
 
 ### macOS / Linux
 
@@ -79,7 +79,7 @@ python3 -m codex_usage setup &&
 
 - 安装命令成功，依赖位于项目 `.venv`，没有安装到系统 Python。
 - GUI 用户的 `check` 成功；命令行用户的 `setup` 与 `demo` 成功。
-- `codex_usage_demo/` 中生成 12 张 PNG、CSV、`summary.json` 和标明合成数据的 `DEMO.txt`。
+- `codex_usage_demo/` 中生成 PNG、图 2 的 `02_cumulative_tokens.mp4`、CSV、`summary.json` 和标明合成数据的 `DEMO.txt`。
 - 向用户交代项目的绝对路径、启动方式和验证结果。
 
 演示使用固定的合成日志，不读取用户的真实日志，不改动正式输出或统计缓存。首次安装和下载依赖需要网络；此后的图片生成在本地完成。合成演示仅用于验证，与 README 中作者的真实用量预览是两组不同的数据。

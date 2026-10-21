@@ -15,6 +15,7 @@
 | 文件 | 职责与主要入口 |
 | --- | --- |
 | [`codex_usage/charts.py`](../codex_usage/charts.py) | `discover_rollouts` 查找日志；`rollout_lines` 流式读取；`parse_rollout` 提取记录；`collect_usage_data` 汇总与去重；`aggregate_*` 聚合；`export_report` 输出图片与数据文件 |
+| [`codex_usage/animations.py`](../codex_usage/animations.py) | `AnimationOptions` 控制编号、日期与帧率；`FrameRenderer` 复用图片函数生成快照；`export_animations` 流式编码 MP4；`animate` 从已有数据文件按需生成动画 |
 | [`codex_usage/running_time.py`](../codex_usage/running_time.py) | `RunningIntervalTracker` 重建回合区间；`deduplicate_running_intervals` 去重；`aggregate_daily_running_time` 按本地日期计算合并及相加时长 |
 | [`codex_usage/cache.py`](../codex_usage/cache.py) | `UsageCache` 管理 SQLite 事务与记录；`can_resume`、`checkpoint_hashes` 判断能否从旧进度续读 |
 | [`codex_usage/cost.py`](../codex_usage/cost.py) | `calculate_event_costs` 按 `OFFICIAL_PRICES` 逐请求计算费用，供 06 任务费用和 13 图复用；独立脚本读取 `events.csv`，生成累计费用与情景结果，并复用图表模块的字体、颜色和保存逻辑 |
@@ -49,6 +50,16 @@ flowchart TD
 6. `export_report` 写入 9 个 CSV、用量图片、13 逐小时费用图片与 `summary.json`。`recent_hourly_api_cost.csv` 保存逐小时金额和未计价统计；`summary.json` 的 `recent_hourly_api_cost` 保存总额、未计价统计及单价来源、核实日期和规则，`charts` 包含 13 图。费用脚本再独立读取 `events.csv` 输出费用表、JSON 和 09 图。
 
 精确定义与零输入、跨日、重复记录等边界见 [统计与数据约定](statistics.md)。无 token 但有运行区间时，仍会生成运行时间、缓存未命中率和最近七天逐小时图；部分 token 图省略。完全无可用活动时 CLI 返回非零并提示检查目录。
+
+### 动画生成
+
+`export_report` 在静态图片后默认调用 `export_animations` 生成 02 MP4；其他编号仅显式选择时生成。GUI 复用该默认行为，仍在后台子进程运行。独立 `animate` 读取已有 `events.csv`、`summary.json` 和运行区间，不重新扫描日志；只写所选 MP4，并更新汇总的 `animations` 条目。
+
+`FrameRenderer` 提前固定模型、来源和构成配色，按日期截取事件及运行区间，调用现有聚合与绘图函数。绘图函数可接收固定颜色参数；`figure_sink` 用 `ContextVar` 临时接收 `save_figure` 的 Figure，渲染后仍关闭 Figure，既不覆盖静态图片，也不把临时逐帧图片留在目录中。每帧按固定画布尺寸等比缩放并补白，避免任务数、图例或文字变化导致视频尺寸变化。
+
+`imageio-ffmpeg` 提供 FFmpeg 路径，编码子进程通过 stdin 接收 RGB 帧，使用 H.264 / yuv420p 和 MP4 faststart。帧逐个渲染、写入，内存不随动画帧数增加；stderr 写入临时文件，避免管道阻塞。编码完成且退出码为 0 后，才以输出目录内的临时 MP4 替换目标；失败关闭管道、回收编码进程并清理暂存文件，保留旧视频。GUI 取消统计子进程后，编码器的输入管道也随之关闭；与静态输出一样，强制终止可能留下暂存文件。
+
+动画的日期、累计和时区定义见 [动画快照](statistics.md#动画快照)；用户入口与参数集中在 [使用指南](../docs/usage.md#动画)。
 
 ## 增量缓存与恢复
 

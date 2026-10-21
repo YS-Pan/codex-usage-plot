@@ -15,11 +15,13 @@ import sqlite3
 import sys
 import tempfile
 from collections.abc import Iterable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from pathlib import Path
 from time import perf_counter
-from typing import Any
+from typing import Any, Callable, Iterator, TYPE_CHECKING
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import matplotlib
@@ -51,6 +53,22 @@ from .running_time import (
     running_intervals_frame,
 )
 from .thread_metadata import directory_name, enrich_thread_metadata
+
+if TYPE_CHECKING:
+    from .animations import AnimationOptions
+
+
+_figure_sink: ContextVar[Callable[[plt.Figure], None] | None] = ContextVar("figure_sink", default=None)
+
+
+@contextmanager
+def figure_sink(sink: Callable[[plt.Figure], None]) -> Iterator[None]:
+    """Reuse normal plots for a video frame without writing still images."""
+    token = _figure_sink.set(sink)
+    try:
+        yield
+    finally:
+        _figure_sink.reset(token)
 
 
 RAW_TOKEN_COLUMNS = [
@@ -1024,6 +1042,10 @@ def save_figure(
     path = output_dir / f"{filename}.{image_format}"
     staged: Path | None = None
     try:
+        sink = _figure_sink.get()
+        if sink is not None:
+            sink(figure)
+            return path
         # Render before replacing an existing image, which may be open in a
         # viewer on Windows. Stage directly in the output directory so the
         # replacement inherits its readable ACL, not a private temp-folder ACL.
@@ -1046,11 +1068,14 @@ def plot_daily_usage(
     output_dir: Path,
     image_format: str,
     dpi: int,
+    *, model_colors: dict[str, Any] | None = None,
 ) -> Path:
     model_daily = model_tokens_by_time(events, pd.DatetimeIndex(daily["date"]))
     figure, axis = plt.subplots(figsize=(13, 5.5))
     bottom = np.zeros(len(daily), dtype=float)
-    for model, color in model_stack_colors(events).items():
+    for model, color in (model_colors if model_colors is not None else model_stack_colors(events)).items():
+        if model not in model_daily:
+            continue
         values = model_daily[model].to_numpy(dtype=float)
         axis.bar(
             daily["date"], values, width=0.82, bottom=bottom,
@@ -1085,13 +1110,16 @@ def plot_recent_hourly_usage(
     output_dir: Path,
     image_format: str,
     dpi: int,
+    *, model_colors: dict[str, Any] | None = None,
 ) -> Path:
     figure, axis = plt.subplots(figsize=(14, 5.5))
     hours = hourly["hour_start"]
     total = int(hourly["total_tokens"].sum())
     model_hourly = model_tokens_by_time(events, pd.DatetimeIndex(hours), "h")
     bottom = np.zeros(len(hourly), dtype=float)
-    for model, color in model_stack_colors(events).items():
+    for model, color in (model_colors if model_colors is not None else model_stack_colors(events)).items():
+        if model not in model_hourly:
+            continue
         values = model_hourly[model].to_numpy(dtype=float)
         if not values.any():
             continue
@@ -1175,6 +1203,7 @@ def plot_cumulative_usage(
     output_dir: Path,
     image_format: str,
     dpi: int,
+    *, model_colors: dict[str, Any] | None = None,
 ) -> Path:
     cumulative = cumulative_model_tokens(events, pd.DatetimeIndex(daily["date"]))
     figure, axis = plt.subplots(figsize=(13, 5.8))
@@ -1184,7 +1213,9 @@ def plot_cumulative_usage(
         dates = pd.DatetimeIndex([dates.iloc[0], dates.iloc[0] + pd.Timedelta(days=1)])
     bottom = np.zeros(len(dates), dtype=float)
     if not cumulative.empty:
-        for model, color in model_stack_colors(events).items():
+        for model, color in (model_colors if model_colors is not None else model_stack_colors(events)).items():
+            if model not in cumulative:
+                continue
             values = cumulative[model].to_numpy(dtype=float)
             if len(values) == 1:
                 values = np.repeat(values, 2)
@@ -1219,7 +1250,8 @@ def plot_cumulative_usage(
 
 
 def plot_daily_composition(
-    daily: pd.DataFrame, output_dir: Path, image_format: str, dpi: int
+    daily: pd.DataFrame, output_dir: Path, image_format: str, dpi: int,
+    *, component_colors: dict[str, Any] | None = None,
 ) -> Path:
     active_columns = [column for column in COMPOSITION_COLUMNS if daily[column].sum() > 0]
     figure, axis = plt.subplots(figsize=(13, 6))
@@ -1231,7 +1263,7 @@ def plot_daily_composition(
             daily["date"],
             values,
             label=COMPOSITION_LABELS[column],
-            color=PALETTE[index % len(PALETTE)],
+            color=component_colors[column] if component_colors is not None else PALETTE[index % len(PALETTE)],
             linewidth=2.0,
             marker="o",
             markersize=2.8,
@@ -1241,7 +1273,11 @@ def plot_daily_composition(
     axis.set(title="Daily token composition (log scale)", ylabel="Tokens")
     axis.yaxis.set_major_formatter(FuncFormatter(format_tokens))
     setup_date_axis(axis)
-    axis.legend(frameon=False, ncol=min(3, len(active_columns)), loc="upper left")
+    if active_columns:
+        axis.legend(frameon=False, ncol=min(3, len(active_columns)), loc="upper left")
+    else:
+        axis.set_ylim(1, 10)
+        axis.text(0.5, 0.5, "No token data", transform=axis.transAxes, ha="center", va="center", color="#64748B")
     axis.grid(which="major", alpha=0.25)
     axis.grid(which="minor", alpha=0.08)
     return save_figure(figure, output_dir, "03_daily_composition", image_format, dpi)
@@ -1289,10 +1325,13 @@ def plot_weekly_breakdown(
     output_dir: Path,
     image_format: str,
     dpi: int,
+    *, category_colors: dict[str, Any] | None = None,
 ) -> Path:
     pivot = weekly_pivot(events, category)
     figure, axis = plt.subplots(figsize=(13, 5.8))
-    colors = breakdown_color_map(pivot.columns)
+    colors = category_colors if category_colors is not None else breakdown_color_map(pivot.columns)
+    if category_colors is not None:
+        pivot = pivot.reindex(columns=list(colors), fill_value=0)
     x_values = mdates.date2num(pivot.index.to_pydatetime())
     bottom = np.zeros(len(pivot), dtype=float)
     for column in pivot.columns:
@@ -1386,6 +1425,7 @@ def plot_top_threads(
     output_dir: Path,
     image_format: str,
     dpi: int,
+    *, model_colors: dict[str, Any] | None = None,
 ) -> Path:
     # Imported locally because the cost calculator shares the chart helpers.
     from .cost import AUTO_REVIEW_MODEL, aggregate_thread_model_costs
@@ -1411,7 +1451,9 @@ def plot_top_threads(
 
     cost_labels = []
     left = np.zeros(len(selected), dtype=float)
-    for model, color in model_stack_colors(events).items():
+    for model, color in (model_colors if model_colors is not None else model_stack_colors(events)).items():
+        if model not in model_threads:
+            continue
         values = model_threads[model].to_numpy(dtype=float)
         if not values.any():
             continue
@@ -1443,7 +1485,7 @@ def plot_top_threads(
     axis.grid(axis="y", visible=False)
     axis.set_xlim(0, max(float(selected["total_tokens"].max()) * 1.14, 1) if not selected.empty else 1)
     if axis.containers:
-        axis.legend(frameon=False, ncol=4, loc="upper left", bbox_to_anchor=(0, -0.10), fontsize=9)
+        axis.legend(frameon=False, ncol=2, loc="lower right", fontsize=9)
     if selected.empty:
         axis.text(0.5, 0.5, "No token data", transform=axis.transAxes, ha="center", va="center")
         axis.set_xticks([])
@@ -1507,7 +1549,8 @@ def gaussian_point_density(counts: np.ndarray, sigma_pixels: float) -> np.ndarra
 
 
 def plot_request_sizes_over_time(
-    events: pd.DataFrame, output_dir: Path, image_format: str, dpi: int
+    events: pd.DataFrame, output_dir: Path, image_format: str, dpi: int,
+    *, source_colors: dict[str, Any] | None = None,
 ) -> Path:
     limit = 60_000
     sampled = (
@@ -1554,7 +1597,7 @@ def plot_request_sizes_over_time(
         total_density = np.zeros(shape, dtype=np.float32)
         weighted_rgb = np.zeros((*shape, 3), dtype=np.float32)
         for index, (source, group) in enumerate(plot_data.groupby("source")):
-            color = PALETTE[index % len(PALETTE)]
+            color = source_colors[source] if source_colors is not None else PALETTE[index % len(PALETTE)]
             counts, _, _ = np.histogram2d(
                 group["plot_log_tokens"], group["plot_date"],
                 bins=shape, range=(log_bounds, date_bounds),
@@ -1816,6 +1859,7 @@ def export_report(
     running_intervals: list[RunningInterval],
     start: date,
     end: date,
+    animation: AnimationOptions | None = None,
 ) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     observed_at = datetime.now(timezone.utc)
@@ -1898,6 +1942,13 @@ def export_report(
     chart_paths.append(plot_recent_hourly_usage(recent_hourly, events, output_dir, image_format, dpi))
     chart_paths.append(plot_recent_hourly_cost(recent_hourly_cost, events, output_dir, image_format, dpi))
 
+    from .animations import AnimationOptions, export_animations
+
+    animation_results = export_animations(
+        events, selected_intervals, output_dir, target_tz, start,
+        animation or AnimationOptions(), top_threads=top_threads, observed_at=observed_at,
+    )
+
     total_input = int(events["input_tokens"].sum())
     total_cached = int(events["cached_input_tokens"].sum())
     summary: dict[str, Any] = {
@@ -1967,6 +2018,7 @@ def export_report(
         },
         "parse_stats": asdict(stats),
         "charts": [path.name for path in chart_paths],
+        "animations": animation_results,
     }
     with (output_dir / "summary.json").open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, ensure_ascii=False, indent=2)
@@ -2024,6 +2076,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path(__file__).resolve().parents[1] / "codex_usage_cache.sqlite3",
         help="缓存文件位置，默认工具目录中的 codex_usage_cache.sqlite3。",
     )
+    animation_group = parser.add_mutually_exclusive_group()
+    animation_group.add_argument(
+        "--animations", type=int, nargs="+", choices=range(1, 14), default=[2],
+        metavar="NUMBER", help="生成指定编号的 MP4 动画，默认仅 02；例如 --animations 2 6。",
+    )
+    animation_group.add_argument("--no-animations", action="store_true", help="本次不生成动画。")
+    parser.add_argument("--animation-start", help="动画第一帧的本地日期，默认结束日期的 30 天前。")
+    parser.add_argument("--animation-end", help="动画最后一帧的本地日期，默认今天；指定 --end 时沿用该日期。")
+    parser.add_argument("--animation-fps", type=int, default=4, help="动画每秒帧数，默认 4，每帧推进一个本地日。")
+    parser.add_argument("--animation-dpi", type=int, default=100, help="动画 DPI，默认 100，与静态图片格式和 DPI 独立。")
     return parser
 
 
@@ -2033,6 +2095,15 @@ def main(argv: list[str] | None = None) -> int:
         target_tz = resolve_timezone(args.timezone)
         start = parse_date_argument(args.start, "--start")
         end = parse_date_argument(args.end, "--end")
+        from .animations import AnimationOptions, animation_dates
+
+        animation = AnimationOptions(
+            charts=() if args.no_animations else tuple(dict.fromkeys(args.animations)),
+            start=parse_date_argument(args.animation_start, "--animation-start"),
+            end=parse_date_argument(args.animation_end, "--animation-end") or end,
+            fps=args.animation_fps, dpi=args.animation_dpi,
+        )
+        animation_dates(animation, target_tz)
     except ValueError as exc:
         eprint(f"错误：{exc}")
         return 2
@@ -2075,18 +2146,23 @@ def main(argv: list[str] | None = None) -> int:
     events = filter_date_range(events, report_start, report_end)
 
     output_dir = args.output.expanduser().resolve()
-    summary = export_report(
-        events,
-        stats,
-        output_dir,
-        target_tz,
-        args.format,
-        args.dpi,
-        args.top_threads,
-        running_intervals=running_intervals,
-        start=report_start,
-        end=report_end,
-    )
+    try:
+        summary = export_report(
+            events,
+            stats,
+            output_dir,
+            target_tz,
+            args.format,
+            args.dpi,
+            args.top_threads,
+            running_intervals=running_intervals,
+            start=report_start,
+            end=report_end,
+            animation=animation,
+        )
+    except (OSError, RuntimeError) as exc:
+        eprint(f"错误：图片或动画生成失败：{exc}")
+        return 1
     print(f"Report: {output_dir}")
     print(
         f"Coverage: {summary['coverage_start']} to {summary['coverage_end']} "
@@ -2109,6 +2185,7 @@ def main(argv: list[str] | None = None) -> int:
         f"{runtime['latest_day_running_percent']:.2f}%{partial}"
     )
     print(f"Generated {len(summary['charts'])} charts and 9 CSV tables")
+    print(f"Generated {len(summary['animations'])} MP4 animations")
     return 0
 
 
