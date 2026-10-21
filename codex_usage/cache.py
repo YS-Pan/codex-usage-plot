@@ -13,7 +13,7 @@ from typing import Any, Iterable
 
 
 # Bump when parsing or persisted metadata semantics change.
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 CHECKPOINT_BYTES = 4096
 
 

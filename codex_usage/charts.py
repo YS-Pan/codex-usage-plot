@@ -50,6 +50,7 @@ from .running_time import (
     local_midnight,
     running_intervals_frame,
 )
+from .thread_metadata import directory_name, enrich_thread_metadata
 
 
 RAW_TOKEN_COLUMNS = [
@@ -462,6 +463,10 @@ def parse_rollout(
                         "model_provider",
                     )
                 }
+                started = parse_iso_timestamp(payload.get("timestamp"), timezone.utc)
+                if started is None:
+                    started = parse_iso_timestamp(item.get("timestamp"), timezone.utc)
+                meta["started_at"] = started.isoformat() if started is not None else None
                 # Persist a source category and parent ID, never arbitrary
                 # nested source fields that could contain message content.
                 category = classify_source(meta, "unknown")
@@ -712,9 +717,14 @@ def collect_cached_usage_data(
                 scan.files_removed += 1
 
         parent_threads: dict[str, str] = {}
+        session_metadata: dict[str, dict[str, Any]] = {}
         running_intervals = list(cache.load_intervals(active))
         for log in paths:
             entry = entries[log]
+            meta = entry["state"].get("meta", {})
+            session_id = first_nonempty(meta.get("id"), meta.get("session_id"))
+            if session_id:
+                session_metadata[session_id] = meta
             file_stats = restore_parse_stats(entry["stats"])
             for key, value in asdict(file_stats).items():
                 if key not in ("runtime", "scan", "files_seen"):
@@ -738,6 +748,7 @@ def collect_cached_usage_data(
                 fingerprints.add(fingerprint)
                 records.append(record)
         frame = frame_from_records(records, parent_threads, titles, target_tz)
+        frame = enrich_thread_metadata(frame, codex_home, session_metadata)
         running_intervals = deduplicate_running_intervals(running_intervals, stats.runtime)
     scan.seconds = perf_counter() - started
     if progress:
@@ -786,17 +797,23 @@ def collect_usage_data(
     fingerprints: set[tuple[object, ...]] = set()
     running_intervals: list[RunningInterval] = []
     parent_threads: dict[str, str] = {}
+    session_metadata: dict[str, dict[str, Any]] = {}
 
     for index, path in enumerate(files, start=1):
         tracker = RunningIntervalTracker(relative_log_path(path, codex_home), stats.runtime)
+        cursor: dict[str, Any] = {}
         for record, fingerprint in parse_rollout(
-            path, codex_home, target_tz, titles, stats, tracker, parent_threads
+            path, codex_home, target_tz, titles, stats, tracker, parent_threads, cursor
         ):
             if fingerprint in fingerprints:
                 stats.duplicate_events_removed += 1
                 continue
             fingerprints.add(fingerprint)
             records.append(record)
+        meta = cursor.get("meta", {})
+        session_id = first_nonempty(meta.get("id"), meta.get("session_id"))
+        if session_id:
+            session_metadata[session_id] = meta
         tracker.finish_open_turn()
         running_intervals.extend(tracker.intervals)
         if progress and (index % 50 == 0 or index == len(files)):
@@ -806,6 +823,7 @@ def collect_usage_data(
             )
 
     frame = frame_from_records(records, parent_threads, titles, target_tz)
+    frame = enrich_thread_metadata(frame, codex_home, session_metadata)
     return frame, deduplicate_running_intervals(running_intervals, stats.runtime), stats
 
 
@@ -918,6 +936,8 @@ def aggregate_threads(events: pd.DataFrame) -> pd.DataFrame:
         main_agent_tokens=events["total_tokens"].where(~descendants, 0),
         subagent_tokens=events["total_tokens"].where(descendants, 0),
         subagent_session_id=events["session_id"].where(descendants, pd.NA),
+        project_name=events["project_name"] if "project_name" in events else events["cwd"].map(directory_name),
+        thread_started_at=events["thread_started_at"] if "thread_started_at" in events else events["timestamp"],
     )
     return (
         attributed.groupby(["thread_id", "title"], dropna=False)
@@ -932,6 +952,8 @@ def aggregate_threads(events: pd.DataFrame) -> pd.DataFrame:
             primary_source=("source", lambda values: values.value_counts().index[0]),
             primary_model=("model", lambda values: values.value_counts().index[0]),
             cwd=("cwd", "first"),
+            project_name=("project_name", "first"),
+            thread_started_at=("thread_started_at", "min"),
         )
         .reset_index()
         .sort_values("total_tokens", ascending=False)
@@ -1019,60 +1041,72 @@ def save_figure(
 
 
 def plot_daily_usage(
-    daily: pd.DataFrame, output_dir: Path, image_format: str, dpi: int
+    daily: pd.DataFrame,
+    events: pd.DataFrame,
+    output_dir: Path,
+    image_format: str,
+    dpi: int,
 ) -> Path:
+    model_daily = model_tokens_by_time(events, pd.DatetimeIndex(daily["date"]))
     figure, axis = plt.subplots(figsize=(13, 5.5))
-    axis.bar(
-        daily["date"],
-        daily["total_tokens"],
-        width=0.82,
-        color=PALETTE[0],
-        alpha=0.58,
-        label="Daily tokens",
-    )
+    bottom = np.zeros(len(daily), dtype=float)
+    for model, color in model_stack_colors(events).items():
+        values = model_daily[model].to_numpy(dtype=float)
+        axis.bar(
+            daily["date"], values, width=0.82, bottom=bottom,
+            color=color, linewidth=0, label=model,
+        )
+        bottom += values
     axis.plot(
         daily["date"],
         daily["rolling_7d_tokens"],
-        color="#DC2626",
+        color="#0F172A",
         linewidth=2.2,
         label="7-day rolling average",
     )
-    axis.set(title="Daily Codex token usage", ylabel="Tokens")
+    axis.set(title="Daily Codex token usage by model", ylabel="Tokens")
+    axis.set_ylim(bottom=0)
     axis.yaxis.set_major_formatter(FuncFormatter(format_tokens))
-    setup_date_axis(axis)
-    axis.legend(frameon=False, ncol=2)
+    setup_date_axis(axis, daily["date"].dt.tz)
+    axis.legend(frameon=False, ncol=4, loc="upper left", bbox_to_anchor=(0, -0.14), fontsize=9)
+    if not bottom.any():
+        axis.set_ylim(0, 1)
+        axis.set_yticks([0, 1])
+        axis.text(
+            0.5, 0.5, "No token data", transform=axis.transAxes,
+            ha="center", va="center", color="#64748B",
+        )
     return save_figure(figure, output_dir, "01_daily_tokens", image_format, dpi)
 
 
 def plot_recent_hourly_usage(
-    hourly: pd.DataFrame, output_dir: Path, image_format: str, dpi: int
+    hourly: pd.DataFrame,
+    events: pd.DataFrame,
+    output_dir: Path,
+    image_format: str,
+    dpi: int,
 ) -> Path:
     figure, axis = plt.subplots(figsize=(14, 5.5))
     hours = hourly["hour_start"]
-    target_tz = hours.dt.tz
-    upper = hours.iloc[-1] + pd.Timedelta(hours=1)
     total = int(hourly["total_tokens"].sum())
-    axis.bar(
-        hours, hourly["total_tokens"], width=0.86 / 24, align="edge",
-        color=PALETTE[0], alpha=0.72, label="Hourly tokens",
+    model_hourly = model_tokens_by_time(events, pd.DatetimeIndex(hours), "h")
+    bottom = np.zeros(len(hourly), dtype=float)
+    for model, color in model_stack_colors(events).items():
+        values = model_hourly[model].to_numpy(dtype=float)
+        if not values.any():
+            continue
+        axis.bar(
+            hours, values, width=0.86 / 24, align="edge", bottom=bottom,
+            color=color, linewidth=0, label=model,
+        )
+        bottom += values
+    setup_recent_hourly_axis(
+        axis, hours, "Hourly Codex token usage by model — last 7 calendar days",
+        "Tokens", format_tokens(total),
     )
-    axis.set(
-        title=(
-            "Hourly Codex token usage — last 7 calendar days\n"
-            f"{hours.iloc[0]:%Y-%m-%d} to {hours.iloc[-1]:%Y-%m-%d}"
-            f" | {target_tz} | total {format_tokens(total)}"
-        ),
-        xlabel="Local date and hour", ylabel="Tokens",
-        xlim=(hours.iloc[0], upper),
-    )
-    axis.set_ylim(bottom=0)
     axis.yaxis.set_major_formatter(FuncFormatter(format_tokens))
-    setup_date_axis(axis, target_tz)
-    axis.xaxis.set_minor_locator(mdates.HourLocator(byhour=[6, 12, 18], tz=target_tz))
-    axis.xaxis.set_minor_formatter(mdates.DateFormatter("%H:%M", tz=target_tz))
-    axis.tick_params(axis="x", which="major", pad=19)
-    axis.tick_params(axis="x", which="minor", labelsize=8)
-    axis.legend(frameon=False, loc="upper left")
+    if axis.containers:
+        axis.legend(frameon=False, ncol=4, loc="upper left", bbox_to_anchor=(0, -0.22), fontsize=9)
     if total == 0:
         axis.set_ylim(0, 1)
         axis.set_yticks([0, 1])
@@ -1083,14 +1117,56 @@ def plot_recent_hourly_usage(
     return save_figure(figure, output_dir, "12_recent_hourly_tokens", image_format, dpi)
 
 
+def setup_recent_hourly_axis(
+    axis: plt.Axes, hours: pd.Series, title: str, ylabel: str, total_label: str
+) -> None:
+    """Share the local calendar and hour labels between the token and cost images."""
+    target_tz = hours.dt.tz
+    upper = hours.iloc[-1] + pd.Timedelta(hours=1)
+    axis.set(
+        title=(
+            f"{title}\n"
+            f"{hours.iloc[0]:%Y-%m-%d} to {hours.iloc[-1]:%Y-%m-%d}"
+            f" | {target_tz} | total {total_label}"
+        ),
+        xlabel="Local date and hour", ylabel=ylabel,
+        xlim=(hours.iloc[0], upper),
+    )
+    axis.set_ylim(bottom=0)
+    setup_date_axis(axis, target_tz)
+    axis.xaxis.set_minor_locator(mdates.HourLocator(byhour=[6, 12, 18], tz=target_tz))
+    axis.xaxis.set_minor_formatter(mdates.DateFormatter("%H:%M", tz=target_tz))
+    axis.tick_params(axis="x", which="major", pad=19)
+    axis.tick_params(axis="x", which="minor", labelsize=8)
+
+
+def model_tokens_by_time(
+    events: pd.DataFrame, periods: pd.DatetimeIndex, frequency: str = "D"
+) -> pd.DataFrame:
+    """Sum every model on a complete local calendar, preserving actual hours."""
+    local_events = events.assign(timestamp=events["timestamp"].dt.tz_convert(periods.tz))
+    origin = periods[0] if len(periods) else "start_day"
+    model_usage = local_events.groupby(
+        [pd.Grouper(key="timestamp", freq=frequency, origin=origin), "model"]
+    )["total_tokens"].sum().unstack("model", fill_value=0)
+    return model_usage.reindex(periods, fill_value=0)
+
+
 def cumulative_model_tokens(
     events: pd.DataFrame, dates: pd.DatetimeIndex
 ) -> pd.DataFrame:
     """Accumulate every model on the report's complete local calendar."""
-    model_daily = events.groupby(
-        [pd.Grouper(key="timestamp", freq="D"), "model"]
-    )["total_tokens"].sum().unstack("model", fill_value=0)
-    return model_daily.reindex(dates, fill_value=0).cumsum()
+    return model_tokens_by_time(events, dates).cumsum()
+
+
+def model_stack_colors(events: pd.DataFrame) -> dict[str, Any]:
+    """Use chart 08's colors and chart 02's first-seen stacking order."""
+    colors = breakdown_color_map(weekly_pivot(events, "model").columns)
+    model_order = events.groupby("model")["timestamp"].min().sort_values(kind="stable").index.tolist()
+    if "codex-auto-review" in model_order:
+        model_order.remove("codex-auto-review")
+        model_order.append("codex-auto-review")
+    return {model: colors[model] for model in model_order}
 
 
 def plot_cumulative_usage(
@@ -1108,18 +1184,13 @@ def plot_cumulative_usage(
         dates = pd.DatetimeIndex([dates.iloc[0], dates.iloc[0] + pd.Timedelta(days=1)])
     bottom = np.zeros(len(dates), dtype=float)
     if not cumulative.empty:
-        colors = breakdown_color_map(weekly_pivot(events, "model").columns)
-        model_order = events.groupby("model")["timestamp"].min().sort_values(kind="stable").index.tolist()
-        if "codex-auto-review" in model_order:
-            model_order.remove("codex-auto-review")
-            model_order.append("codex-auto-review")
-        for model in model_order:
+        for model, color in model_stack_colors(events).items():
             values = cumulative[model].to_numpy(dtype=float)
             if len(values) == 1:
                 values = np.repeat(values, 2)
             top = bottom + values
             axis.fill_between(
-                dates, bottom, top, color=colors[model], alpha=1.0,
+                dates, bottom, top, color=color, alpha=1.0,
                 linewidth=0, edgecolor="none", label=f"{model}: {format_tokens(values[-1])}",
             )
             bottom = top
@@ -1310,40 +1381,107 @@ def truncate_label(value: object, length: int = 48) -> str:
 
 def plot_top_threads(
     threads: pd.DataFrame,
+    events: pd.DataFrame,
     top_n: int,
     output_dir: Path,
     image_format: str,
     dpi: int,
 ) -> Path:
+    # Imported locally because the cost calculator shares the chart helpers.
+    from .cost import AUTO_REVIEW_MODEL, aggregate_thread_model_costs
+
     selected = threads.head(top_n).sort_values("total_tokens", ascending=True).copy()
     labels = [
-        f"{truncate_label(title)}  [{str(thread_id)[:8]}]"
-        for title, thread_id in zip(selected["title"], selected["thread_id"])
+        f"{truncate_label(row.project_name, 40)} · {row.thread_started_at:%Y-%m-%d}\n{truncate_label(row.title)}"
+        for row in selected.itertuples()
     ]
-    figure_height = max(5.5, 0.43 * len(selected) + 1.8)
-    figure, axis = plt.subplots(figsize=(13, figure_height))
-    bars = axis.barh(labels, selected["total_tokens"], color=PALETTE[0], alpha=0.78)
+    figure_height = max(5.5, 0.58 * len(selected) + 2.0)
+    figure, axis = plt.subplots(figsize=(13.5, figure_height))
+    model_threads = events.groupby(["thread_id", "model"])["total_tokens"].sum().unstack("model", fill_value=0)
+    model_threads = model_threads.reindex(selected["thread_id"], fill_value=0)
+    costs = aggregate_thread_model_costs(events.loc[events["thread_id"].isin(selected["thread_id"])])
+    model_costs = costs.set_index(["thread_id", "model"])
+    thread_costs = costs.groupby("thread_id")[["total_cost_usd", "priced_tokens"]].sum(min_count=1)
+
+    def cost_label(value: float) -> str:
+        if pd.isna(value):
+            return "N/A"
+        amount = f"${value:,.2f}" if value == 0 or value >= 0.005 else "<$0.01"
+        return amount
+
+    cost_labels = []
+    left = np.zeros(len(selected), dtype=float)
+    for model, color in model_stack_colors(events).items():
+        values = model_threads[model].to_numpy(dtype=float)
+        if not values.any():
+            continue
+        bars = axis.barh(np.arange(len(selected)), values, left=left, color=color, linewidth=0, label=model)
+        red, green, blue = to_rgb(color)
+        text_color = "#172033" if 0.299 * red + 0.587 * green + 0.114 * blue > 0.58 else "white"
+        for position, (thread_id, bar) in enumerate(zip(selected["thread_id"], bars)):
+            if bar.get_width() <= 0:
+                continue
+            if model == AUTO_REVIEW_MODEL or (thread_id, model) not in model_costs.index:
+                continue
+            estimate = model_costs.loc[(thread_id, model)]
+            label = cost_label(estimate["total_cost_usd"])
+            text = axis.text(
+                bar.get_x() + bar.get_width() / 2, position, label,
+                ha="center", va="center", fontsize=9, color=text_color,
+            )
+            cost_labels.append((text, bar))
+        left += values
     axis.set(
         title=(
-            f"Top {len(selected)} main threads by local token usage (including subagents)"
-            if not selected.empty else "Main thread token usage (including subagents)"
+            f"Top {len(selected)} main threads by model token usage (including subagents)"
+            if not selected.empty else "Main thread token usage by model (including subagents)"
         ),
         xlabel="Tokens",
     )
     axis.xaxis.set_major_formatter(FuncFormatter(format_tokens))
+    axis.set_yticks(np.arange(len(selected)), labels=labels)
     axis.grid(axis="y", visible=False)
+    axis.set_xlim(0, max(float(selected["total_tokens"].max()) * 1.14, 1) if not selected.empty else 1)
+    if axis.containers:
+        axis.legend(frameon=False, ncol=4, loc="upper left", bbox_to_anchor=(0, -0.10), fontsize=9)
     if selected.empty:
         axis.text(0.5, 0.5, "No token data", transform=axis.transAxes, ha="center", va="center")
         axis.set_xticks([])
         axis.set_yticks([])
-    for bar, value in zip(bars, selected["total_tokens"]):
-        axis.text(
-            bar.get_width(),
-            bar.get_y() + bar.get_height() / 2,
+    token_labels = []
+    for position, value in enumerate(selected["total_tokens"]):
+        text = axis.text(
+            float(value),
+            position,
             f"  {format_tokens(float(value))}",
             va="center",
             fontsize=9,
         )
+        token_labels.append(text)
+    if not selected.empty:
+        figure.canvas.draw()
+        renderer = figure.canvas.get_renderer()
+        for position, thread_id in enumerate(selected["thread_id"]):
+            total_label = average_label = "—"
+            if thread_id in thread_costs.index:
+                estimate = thread_costs.loc[thread_id]
+                total_label = cost_label(estimate["total_cost_usd"])
+                average_label = "N/A"
+                if estimate["priced_tokens"] > 0:
+                    average_label = cost_label(
+                        estimate["total_cost_usd"] / estimate["priced_tokens"] * 1_000_000,
+                    )
+            offset = token_labels[position].get_window_extent(renderer).width * 72 / figure.dpi + 5
+            axis.annotate(
+                f"{total_label}\n{average_label} / 1M",
+                xy=(float(selected.iloc[position]["total_tokens"]), position),
+                xytext=(offset, 0), textcoords="offset points", ha="left", va="center",
+                fontsize=9, linespacing=1.5, color="#172033",
+            )
+        # Omit prices that cannot fit inside their model's token segment.
+        for text, bar in cost_labels:
+            if text.get_window_extent(renderer).width + 8 > bar.get_window_extent(renderer).width:
+                text.remove()
     return save_figure(figure, output_dir, "06_top_threads", image_format, dpi)
 
 
@@ -1695,6 +1833,10 @@ def export_report(
     threads = aggregate_threads(events)
     models = aggregate_models(events)
     recent_hourly = aggregate_recent_hourly(events, target_tz, end)
+    # Import here because the cost module also reuses the chart styling helpers.
+    from .cost import OFFICIAL_PRICES, PRICE_DATE, aggregate_recent_hourly_cost, plot_recent_hourly_cost
+
+    recent_hourly_cost = aggregate_recent_hourly_cost(events, pd.DatetimeIndex(recent_hourly["hour_start"]))
 
     dataframe_for_csv(events).to_csv(output_dir / "events.csv", index=False, encoding="utf-8-sig")
     dataframe_for_csv(daily).to_csv(
@@ -1718,10 +1860,13 @@ def export_report(
     dataframe_for_csv(recent_hourly).to_csv(
         output_dir / "recent_hourly_usage.csv", index=False, encoding="utf-8-sig"
     )
+    dataframe_for_csv(recent_hourly_cost).to_csv(
+        output_dir / "recent_hourly_api_cost.csv", index=False, encoding="utf-8-sig"
+    )
 
     configure_matplotlib()
     chart_paths = [] if events.empty else [
-        plot_daily_usage(daily, output_dir, image_format, dpi),
+        plot_daily_usage(daily, events, output_dir, image_format, dpi),
         plot_cumulative_usage(daily, events, output_dir, image_format, dpi),
         plot_daily_composition(daily, output_dir, image_format, dpi),
         plot_weekly_breakdown(
@@ -1734,7 +1879,7 @@ def export_report(
             dpi,
         ),
         plot_activity_heatmap(events, output_dir, image_format, dpi),
-        plot_top_threads(threads, top_threads, output_dir, image_format, dpi),
+        plot_top_threads(threads, events, top_threads, output_dir, image_format, dpi),
         plot_request_sizes_over_time(events, output_dir, image_format, dpi),
         plot_weekly_breakdown(
             events,
@@ -1750,7 +1895,8 @@ def export_report(
         plot_daily_running_time(running_daily, output_dir, target_tz, image_format, dpi)
     )
     chart_paths.append(plot_daily_cache_miss_rate(daily, output_dir, image_format, dpi))
-    chart_paths.append(plot_recent_hourly_usage(recent_hourly, output_dir, image_format, dpi))
+    chart_paths.append(plot_recent_hourly_usage(recent_hourly, events, output_dir, image_format, dpi))
+    chart_paths.append(plot_recent_hourly_cost(recent_hourly_cost, events, output_dir, image_format, dpi))
 
     total_input = int(events["input_tokens"].sum())
     total_cached = int(events["cached_input_tokens"].sum())
@@ -1780,6 +1926,22 @@ def export_report(
             if not events.empty else None
         ),
         "peak_day_tokens": int(daily["total_tokens"].max()),
+        "recent_hourly_api_cost": {
+            "currency": "USD",
+            "total_cost_usd": float(recent_hourly_cost["official_models_cost_usd"].sum()),
+            "unpriced_requests": int(recent_hourly_cost["unpriced_requests"].sum()),
+            "unpriced_tokens": int(recent_hourly_cost["unpriced_tokens"].sum()),
+            "price_date": PRICE_DATE,
+            "official_prices": {
+                model: asdict(price) for model, price in OFFICIAL_PRICES.items()
+                if f"model_{model}_cost_usd" in recent_hourly_cost.columns
+            },
+            "assumptions": [
+                "Sum per-request estimates using the recorded standard API token prices; not an actual bill.",
+                "Models without recorded prices and tool-call charges are excluded.",
+                "Rows with only total_tokens and no input/output breakdown contribute no estimated cost.",
+            ],
+        },
         "running_time": {
             "definition": "Daily union and sum of running turn intervals; percentages use the full local day.",
             "unfinished_turn_policy": "Count only through the last observed in-turn event.",
@@ -1946,7 +2108,7 @@ def main(argv: list[str] | None = None) -> int:
         f"{runtime['latest_day_summed_running_hours']:.2f} summed session hours, "
         f"{runtime['latest_day_running_percent']:.2f}%{partial}"
     )
-    print(f"Generated {len(summary['charts'])} charts and 8 CSV tables")
+    print(f"Generated {len(summary['charts'])} charts and 9 CSV tables")
     return 0
 
 

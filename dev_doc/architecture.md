@@ -17,13 +17,14 @@
 | [`codex_usage/charts.py`](../codex_usage/charts.py) | `discover_rollouts` 查找日志；`rollout_lines` 流式读取；`parse_rollout` 提取记录；`collect_usage_data` 汇总与去重；`aggregate_*` 聚合；`export_report` 输出图片与数据文件 |
 | [`codex_usage/running_time.py`](../codex_usage/running_time.py) | `RunningIntervalTracker` 重建回合区间；`deduplicate_running_intervals` 去重；`aggregate_daily_running_time` 按本地日期计算合并及相加时长 |
 | [`codex_usage/cache.py`](../codex_usage/cache.py) | `UsageCache` 管理 SQLite 事务与记录；`can_resume`、`checkpoint_hashes` 判断能否从旧进度续读 |
-| [`codex_usage/cost.py`](../codex_usage/cost.py) | 读取 `events.csv`，按 `OFFICIAL_PRICES` 与情景假设计算费用；复用图表模块的字体、颜色和保存逻辑 |
+| [`codex_usage/cost.py`](../codex_usage/cost.py) | `calculate_event_costs` 按 `OFFICIAL_PRICES` 逐请求计算费用，供 06 任务费用和 13 图复用；独立脚本读取 `events.csv`，生成累计费用与情景结果，并复用图表模块的字体、颜色和保存逻辑 |
+| [`codex_usage/thread_metadata.py`](../codex_usage/thread_metadata.py) | 在日期筛选前结合主会话开始时间、目录与本地保存的项目元数据，补齐 06 图的项目名和开始日期；项目名每次刷新，不写入原始日志 |
 | [`codex_usage/gui.py`](../codex_usage/gui.py) | `UsageApp` 管理 Tk 控件；`ReportOptions` 保存选项；`generate_reports` 在后台顺序执行两个 CLI |
 | [`codex_usage/environment.py`](../codex_usage/environment.py)、[`启动用量统计.cmd`](../启动用量统计.cmd) | 寻找 Python、创建 / 检查项目 `.venv`、安装缺失依赖并启动 GUI |
 | [`codex_usage/demo.py`](../codex_usage/demo.py) | 用固定随机种子生成合成元数据，复用正式解析和导出流程生成演示 |
 | `tests/test_*.py` | 使用合成日志验证解析、统计、缓存和首次使用入口；`tests/__init__.py` 维持标准 unittest 自动发现 |
 
-运行时间和缓存模块不依赖 GUI。费用脚本复用用量模块；GUI 通过子进程执行 CLI，不在 Tk 主线程导入绘图库或扫描日志。
+运行时间和缓存模块不依赖 GUI。费用脚本复用用量模块的绘图工具，`export_report` 在生成逐小时费用时复用费用计算器；GUI 通过子进程执行 CLI，不在 Tk 主线程导入绘图库或扫描日志。
 
 ## 图片与数据文件生成路径
 
@@ -35,7 +36,7 @@ flowchart TD
     P --> D[全局去重、父子会话归属、时区转换]
     C --> D
     D --> F[按本地日期筛选与聚合]
-    F --> U[用量图表、CSV、summary.json]
+    F --> U[用量图片、13 逐小时费用图片、CSV、summary.json]
     U --> E[events.csv]
     E --> A[API 费用估算与 09 图]
 ```
@@ -44,8 +45,8 @@ flowchart TD
 2. 流式读取普通与压缩日志；Python 3.14+ 使用 `compression.zstd`，较早版本使用 `backports.zstd`。压缩读取限制输出块大小并检查帧完整性，不把解压文件写回日志目录。
 3. 解析 token 事件、模型与回合状态；运行区间由独立的 tracker 重建。缓存模式以 UTC 保存事件，读取时转换至所选时区。
 4. 汇总所有活动文件，去除重复 token / 运行区间，解析父会话关系并重新加载标题。父子关系解析早于日期筛选，以保留没有 token 的中间会话关系。
-5. 根据覆盖日期或指定范围生成完整日历日序列，分别聚合用量、缓存比例、小时用量和运行时间。
-6. `export_report` 写入 8 个 CSV、用量图表与 `summary.json`。费用脚本再独立读取 `events.csv` 输出费用表、JSON 和 09 图。
+5. 根据覆盖日期或指定范围生成完整日历日序列，分别聚合用量、缓存比例、小时用量和运行时间。逐小时费用复用 12 图的小时索引，先通过 `calculate_event_costs` 按记录单价和长上下文规则计算每次请求，再按小时与模型求和；无记录单价的模型仅统计未计价请求和用量。
+6. `export_report` 写入 9 个 CSV、用量图片、13 逐小时费用图片与 `summary.json`。`recent_hourly_api_cost.csv` 保存逐小时金额和未计价统计；`summary.json` 的 `recent_hourly_api_cost` 保存总额、未计价统计及单价来源、核实日期和规则，`charts` 包含 13 图。费用脚本再独立读取 `events.csv` 输出费用表、JSON 和 09 图。
 
 精确定义与零输入、跨日、重复记录等边界见 [统计与数据约定](statistics.md)。无 token 但有运行区间时，仍会生成运行时间、缓存未命中率和最近七天逐小时图；部分 token 图省略。完全无可用活动时 CLI 返回非零并提示检查目录。
 
@@ -53,7 +54,7 @@ flowchart TD
 
 默认数据库 `codex_usage_cache.sqlite3` 位于工具目录。`metadata` 保存数据根目录等信息，`logs` 保存文件识别信息、大小 / 修改时间、已读取字节位置、检查点及解析状态；`events` 和 `intervals` 保存绘图所需的 token 记录与运行区间。数据库结构版本由 `CACHE_VERSION` 管理。
 
-缓存不复制原始日志，不保存消息、回答、推理或工具输出正文。时区、日期范围、归档选项和图片格式不使缓存只剩某次筛选结果；每次绘图使用本轮选中的完整数据，费用仍从生成的 `events.csv` 读取。
+缓存不复制原始日志，不保存消息、回答、推理或工具输出正文。时区、日期范围、归档选项和图片格式不使缓存只剩某次筛选结果；每次绘图使用本轮选中的完整数据。13 图直接复用本轮筛选后的事件，独立费用脚本从生成的 `events.csv` 读取。
 
 | 文件状态 | 处理方式 |
 | --- | --- |

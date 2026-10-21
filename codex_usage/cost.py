@@ -27,8 +27,11 @@ from matplotlib.ticker import FuncFormatter, NullFormatter
 from .charts import (
     breakdown_color_map,
     configure_matplotlib,
+    format_tokens,
+    model_stack_colors,
     save_figure,
     setup_date_axis,
+    setup_recent_hourly_axis,
     weekly_pivot,
 )
 
@@ -165,6 +168,37 @@ def calculate_event_costs(events: pd.DataFrame, price: ModelPrice) -> pd.DataFra
         ]
     ].sum(axis=1)
     return result
+
+
+def aggregate_thread_model_costs(events: pd.DataFrame) -> pd.DataFrame:
+    """Estimate each task/model from individual requests, excluding auto-review."""
+    selected = events.loc[
+        (events["model"] != AUTO_REVIEW_MODEL) & (events.get("source", "") != "auto_review")
+    ].copy()
+    selected["total_cost_usd"] = np.nan
+    selected["priced_tokens"] = 0
+    breakdown_tokens = selected["input_tokens"] + selected["output_tokens"]
+    for model, price in OFFICIAL_PRICES.items():
+        # A total-only snapshot has no input/output split to price.
+        mask = (selected["model"] == model) & (
+            (breakdown_tokens > 0) | (selected["total_tokens"] == 0)
+        )
+        if not mask.any():
+            continue
+        calculated = calculate_event_costs(selected.loc[mask], price)
+        selected.loc[mask, "total_cost_usd"] = calculated["total_cost_usd"]
+        selected.loc[mask, "priced_tokens"] = np.minimum(
+            selected.loc[mask, "total_tokens"], breakdown_tokens.loc[mask],
+        )
+    selected["unpriced_tokens"] = (
+        selected["total_tokens"] - selected["priced_tokens"]
+    ).clip(lower=0)
+    return (
+        selected.groupby(["thread_id", "model"])
+        [["total_cost_usd", "priced_tokens", "unpriced_tokens"]]
+        .sum(min_count=1)
+        .reset_index()
+    )
 
 
 def summarize_official_models(events: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -336,6 +370,88 @@ def plot_cumulative_cost(
         axis.set_xticks([])
         axis.set_yticks([])
     save_figure(figure, output.parent, output.stem, output.suffix.lstrip("."), dpi)
+
+
+def aggregate_recent_hourly_cost(events: pd.DataFrame, hours: pd.DatetimeIndex) -> pd.DataFrame:
+    """Price individual requests before summing on chart 12's actual local hours."""
+    local_events = events.assign(timestamp=events["timestamp"].dt.tz_convert(hours.tz))
+    selected = local_events.loc[
+        (local_events["timestamp"] >= hours[0])
+        & (local_events["timestamp"] < hours[-1] + pd.Timedelta(hours=1))
+    ]
+    hourly = pd.DataFrame(index=hours)
+    hourly.index.name = "hour_start"
+    hourly["official_models_cost_usd"] = 0.0
+    for model, price in OFFICIAL_PRICES.items():
+        subset = selected.loc[selected["model"] == model]
+        if subset.empty:
+            continue
+        calculated = calculate_event_costs(subset, price)
+        values = (
+            calculated.set_index("timestamp")["total_cost_usd"]
+            .resample("h", origin=hours[0]).sum().reindex(hours, fill_value=0.0)
+        )
+        hourly[f"model_{model}_cost_usd"] = values
+        hourly["official_models_cost_usd"] += values
+    unpriced = selected.loc[~selected["model"].isin(OFFICIAL_PRICES)].set_index("timestamp")
+    hourly["unpriced_requests"] = (
+        unpriced["total_tokens"].resample("h", origin=hours[0]).size().reindex(hours, fill_value=0)
+    ).astype("int64")
+    hourly["unpriced_tokens"] = (
+        unpriced["total_tokens"].resample("h", origin=hours[0]).sum().reindex(hours, fill_value=0)
+    ).astype("int64")
+    return hourly.reset_index()
+
+
+def plot_recent_hourly_cost(
+    hourly: pd.DataFrame,
+    events: pd.DataFrame,
+    output_dir: Path,
+    image_format: str,
+    dpi: int,
+) -> Path:
+    configure_matplotlib()
+    figure, axis = plt.subplots(figsize=(14, 5.5))
+    hours = hourly["hour_start"]
+    bottom = np.zeros(len(hourly), dtype=float)
+    for model, color in model_stack_colors(events).items():
+        column = f"model_{model}_cost_usd"
+        if column not in hourly:
+            continue
+        values = hourly[column].to_numpy(dtype=float)
+        if not values.any():
+            continue
+        axis.bar(
+            hours, values, width=0.86 / 24, align="edge", bottom=bottom,
+            color=color, linewidth=0, label=model,
+        )
+        bottom += values
+    total = float(hourly["official_models_cost_usd"].sum())
+    setup_recent_hourly_axis(
+        axis, hours, "Hourly estimated API cost by model — last 7 calendar days",
+        "Estimated cost (USD)", f"${total:,.2f}",
+    )
+    # Preserve cents for low-cost windows without crowding larger dollar ticks.
+    axis.yaxis.set_major_formatter(FuncFormatter(
+        lambda value, _pos: f"${value:,.2f}" if axis.get_ylim()[1] < 10 else f"${value:,.0f}"
+    ))
+    excluded = int(hourly["unpriced_requests"].sum())
+    excluded_tokens = int(hourly["unpriced_tokens"].sum())
+    axis.set_title(
+        f"{axis.get_title()}\nRecorded API rates; unpriced models excluded"
+        f" ({excluded:,} requests / {format_tokens(excluded_tokens)} tokens)",
+        fontsize=11,
+    )
+    if axis.containers:
+        axis.legend(frameon=False, ncol=4, loc="upper left", bbox_to_anchor=(0, -0.22), fontsize=9)
+    if total == 0:
+        axis.set_ylim(0, 1)
+        axis.set_yticks([0, 1])
+        axis.text(
+            0.5, 0.5, "No estimated cost for models with recorded API rates in this 7-day window",
+            transform=axis.transAxes, ha="center", va="center", color="#64748B",
+        )
+    return save_figure(figure, output_dir, "13_recent_hourly_api_cost", image_format, dpi)
 
 
 def build_parser() -> argparse.ArgumentParser:
