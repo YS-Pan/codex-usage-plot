@@ -5,12 +5,14 @@ from datetime import date, datetime, timezone
 import io
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 from matplotlib.colors import to_hex
 import pandas as pd
 from PIL import Image
@@ -107,6 +109,42 @@ class AnimationTests(unittest.TestCase):
             self.assertEqual(colors, {model: expected[model] for model in colors})
             self.assertEqual(list(colors), [model for model in expected if model in colors])
 
+    def test_cumulative_axes_follow_each_snapshot_without_using_future_usage(self):
+        events = synthetic_events([
+            ("2026-10-01T00:00:00Z", "old", 100),
+            ("2026-10-19T00:00:00Z", "old", 200),
+            ("2026-10-20T00:00:00Z", "new", 900),
+            ("2026-10-21T03:00:00Z", "future", 1_000_000_000),
+        ])
+        options = animations.AnimationOptions(start=date(2026, 10, 19), end=date(2026, 10, 21), dpi=30)
+        dates = animations.animation_dates(options, self.zone, self.observed)
+        renderer = animations.FrameRenderer(events, [], self.zone, date(2026, 10, 1), dates, options, 3, self.observed)
+        original_save = charts.save_figure
+        snapshots = []
+
+        def inspect(figure, *args):
+            # The sink applies the video layout inside save_figure.
+            result = original_save(figure, *args)
+            axis = figure.axes[0]
+            snapshots.append((axis.get_xlim(), axis.get_ylim(), axis.get_position().bounds))
+            return result
+
+        with patch.object(charts, "save_figure", side_effect=inspect):
+            for stamp in dates:
+                with renderer.render(2, stamp) as image:
+                    self.assertEqual(image.size, (420, 240))
+        self.assertEqual([mdates.num2date(item[0][1]).date() for item in snapshots],
+                         [date(2026, 10, 20), date(2026, 10, 21), date(2026, 10, 22)])
+        self.assertGreater(snapshots[0][1][1], 300)
+        self.assertLess(snapshots[0][1][1], 1200)
+        self.assertGreater(snapshots[1][1][1], 1200)
+        self.assertLess(snapshots[1][1][1], 2000)
+        # An idle date advances time without expanding the token scale. The
+        # future request after today's cutoff must not influence either frame.
+        self.assertEqual(snapshots[1][1], snapshots[2][1])
+        self.assertTrue(all(item[1][0] == 0 for item in snapshots))
+        self.assertTrue(all(item[2] == snapshots[0][2] for item in snapshots))
+
     def test_all_numbered_charts_render_empty_and_populated_frames_without_still_files(self):
         events = synthetic_events([("2026-10-20T00:00:00Z", "gpt-6.1-sol", 1000)])
         options = animations.AnimationOptions(start=date(2026, 10, 19), end=date(2026, 10, 20), dpi=30)
@@ -146,6 +184,32 @@ class AnimationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "synthetic rendering error"):
             animations.write_mp4(broken_frames(), path, (40, 20), 4, animations.ffmpeg_executable())
         self.assertEqual(path.read_bytes(), previous)
+        self.assertEqual(list(self.output.glob(".animation-*")), [])
+
+    def test_optional_gif_loops_with_the_mp4_frame_count_and_preserves_old_file_on_failure(self):
+        events = synthetic_events([("2026-10-20T00:00:00Z", "old", 1000)])
+        options = animations.AnimationOptions(start=date(2026, 10, 19), end=date(2026, 10, 21),
+                                               dpi=30, fps=4, gif=True)
+        with redirect_stdout(io.StringIO()):
+            results = animations.export_animations(events, [], self.output, self.zone, date(2026, 10, 1),
+                                                   options, observed_at=self.observed)
+        self.assertEqual([item["format"] for item in results], ["mp4", "gif"])
+        gif_path = self.output / "02_cumulative_tokens.gif"
+        with Image.open(gif_path) as image:
+            self.assertEqual(image.format, "GIF")
+            self.assertTrue(image.is_animated)
+            self.assertEqual(image.n_frames, 3)
+            self.assertEqual(image.info["loop"], 0)
+            self.assertEqual(image.info["duration"], 250)
+            self.assertEqual(image.size, (420, 240))
+        self.assertEqual(results[0]["model_colors"], results[1]["model_colors"])
+        previous = gif_path.read_bytes()
+        failure = subprocess.CalledProcessError(1, "synthetic-ffmpeg", stderr=b"synthetic encoder error")
+        with patch.object(animations.subprocess, "run", side_effect=failure), \
+                self.assertRaisesRegex(RuntimeError, "synthetic encoder error"):
+            animations.convert_mp4_to_gif(self.output / "02_cumulative_tokens.mp4", gif_path,
+                                          animations.ffmpeg_executable())
+        self.assertEqual(gif_path.read_bytes(), previous)
         self.assertEqual(list(self.output.glob(".animation-*")), [])
 
     def test_default_report_generates_only_chart_two_animation_and_opt_out_skips_encoder(self):
@@ -219,12 +283,13 @@ class AnimationTests(unittest.TestCase):
         self.assertEqual(restored.iloc[0]["thread_id"], "001")
         with redirect_stdout(io.StringIO()):
             result = animations.main(["--chart", "6", "--output", str(self.output), "--start", "2026-10-20",
-                                      "--end", "2026-10-20", "--dpi", "30"])
+                                      "--end", "2026-10-20", "--dpi", "30", "--gif"])
         self.assertEqual(result, 0)
         self.assertTrue((self.output / "06_top_threads.mp4").is_file())
+        self.assertTrue((self.output / "06_top_threads.gif").is_file())
         self.assertEqual(before, {path.name: path.read_bytes() for path in self.output.iterdir() if path.name in before})
         summary = json.loads((self.output / "summary.json").read_text(encoding="utf-8"))
-        self.assertEqual([item["chart"] for item in summary["animations"]], [6])
+        self.assertEqual([item["chart"] for item in summary["animations"]], [6, 6])
         with redirect_stderr(io.StringIO()) as errors:
             result = animations.main(["--chart", "2", "--output", str(self.output / "missing")])
         self.assertEqual(result, 1)

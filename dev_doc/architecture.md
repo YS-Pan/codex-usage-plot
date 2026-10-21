@@ -61,6 +61,8 @@ flowchart TD
 
 动画的日期、累计和时区定义见 [动画快照](statistics.md#动画快照)；用户入口与参数集中在 [使用指南](../docs/usage.md#动画)。
 
+`animate --gif` 在 MP4 之外导出同名 GIF。`convert_mp4_to_gif` 用 FFmpeg 两遍顺序读取 MP4，先生成整个动画共用的调色板，再编码循环播放的 GIF；不在 Python 中积存所有帧。调色板只存在于输出目录内的临时目录，GIF 同样在编码成功后原子替换目标。默认 `report` / GUI 不额外生成 GIF。
+
 ## 增量缓存与恢复
 
 默认数据库 `codex_usage_cache.sqlite3` 位于工具目录。`metadata` 保存数据根目录等信息，`logs` 保存文件识别信息、大小 / 修改时间、已读取字节位置、检查点及解析状态；`events` 和 `intervals` 保存绘图所需的 token 记录与运行区间。数据库结构版本由 `CACHE_VERSION` 管理。

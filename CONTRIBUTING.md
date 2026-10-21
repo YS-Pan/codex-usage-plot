@@ -52,7 +52,7 @@ git diff --cached --name-only
 
 提交前确认暂存区不含这两个路径；通过 GitHub 插件提交时同样从文件或 tree 清单中排除。图片的本地修改可以继续保留在工作区。
 
-`codex_usage_report/02_cumulative_tokens.mp4` 作为 README 的动画示例一同跟踪。两张 PNG 的后续修改继续按上述约定排除。`.gitignore` 排除其余默认输出、演示输出、本地设置、虚拟环境、JSONL 日志和 SQLite 缓存。自定义输出目录仍需自行检查。提交前运行 `git status --short` 和 `git diff --check`，确认文件清单符合上述约定。
+`codex_usage_report/02_cumulative_tokens.mp4` 和 `codex_usage_report/02_cumulative_tokens.gif` 作为 README 的动画示例一同跟踪。两张 PNG 的后续修改继续按上述约定排除。`.gitignore` 排除其余默认输出、演示输出、本地设置、虚拟环境、JSONL 日志和 SQLite 缓存。自定义输出目录仍需自行检查。提交前运行 `git status --short` 和 `git diff --check`，确认文件清单符合上述约定。
 
 输出文件虽然不包含消息正文，仍可能含有任务标题、工作目录、会话 ID 和活动时间。反馈问题时只附必要且已脱敏的错误片段，优先提供合成日志复现；不要直接上传真实 `events.csv`、缓存数据库或 rollout 日志。
 

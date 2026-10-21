@@ -1,4 +1,4 @@
-"""Daily snapshots of the existing plots, encoded locally as H.264 MP4."""
+"""Daily snapshots of the existing plots, encoded locally as MP4 and optional GIF."""
 
 from __future__ import annotations
 
@@ -42,6 +42,7 @@ class AnimationOptions:
     end: date | None = None
     fps: int = 4
     dpi: int = 100
+    gif: bool = False
 
 
 def animation_dates(
@@ -143,6 +144,35 @@ def write_mp4(
             staged.unlink(missing_ok=True)
 
 
+def convert_mp4_to_gif(source: Path, target: Path, executable: str) -> None:
+    """Use a shared palette for all frames and preserve the MP4's timing."""
+    staged: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(prefix=".animation-", suffix=".gif", dir=target.parent, delete=False) as handle:
+            staged = Path(handle.name)
+        with tempfile.TemporaryDirectory(prefix=".animation-palette-", dir=target.parent) as directory:
+            palette = Path(directory) / "palette.png"
+            commands = [
+                ["-i", str(source), "-vf", "palettegen=reserve_transparent=0", "-frames:v", "1", "-threads", "1", str(palette)],
+                ["-i", str(source), "-i", str(palette), "-filter_complex", "[0:v][1:v]paletteuse=dither=none", "-loop", "0", str(staged)],
+            ]
+            for arguments in commands:
+                try:
+                    subprocess.run(
+                        [executable, "-hide_banner", "-loglevel", "error", "-y", *arguments],
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                        check=True, timeout=60,
+                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                    )
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                    detail = exc.stderr.decode("utf-8", errors="replace").strip() if exc.stderr else str(exc)
+                    raise RuntimeError(f"GIF 编码失败：{detail}") from exc
+        staged.replace(target)
+    finally:
+        if staged is not None:
+            staged.unlink(missing_ok=True)
+
+
 class FrameRenderer:
     """Freeze full-report colors once, then reuse the normal plotting functions."""
 
@@ -153,10 +183,8 @@ class FrameRenderer:
     ) -> None:
         self.events, self.intervals, self.target_tz = events, intervals, target_tz
         self.history_start = min(history_start, dates[0].date())
-        self.dates, self.options = dates, options
+        self.options = options
         self.top_threads, self.observed_at = top_threads, observed_at
-        final_cutoff = min(local_midnight(dates[-1].date() + timedelta(days=1), target_tz), observed_at)
-        self.max_tokens = max(float(events.loc[events["timestamp"] < final_cutoff, "total_tokens"].sum()) * 1.12, 1)
         self.model_colors = charts.model_stack_colors(events)
         self.source_colors = charts.breakdown_color_map(charts.weekly_pivot(events, "source").columns)
         self.point_colors = charts.breakdown_color_map(sorted(events["source"].unique()))
@@ -183,9 +211,9 @@ class FrameRenderer:
                 figure.set_size_inches(14, 8)
                 figure.subplots_adjust(left=0.095, right=0.975, bottom=0.13, top=0.86)
                 axis = figure.axes[0]
-                axis.set_xlim(pd.Timestamp(self.history_start), self.dates[-1].tz_localize(None) + pd.Timedelta(days=1))
-                axis.set_ylim(0, self.max_tokens)
-                axis.yaxis.set_major_locator(MaxNLocator(nbins=7))
+                axis.set_xlim(pd.Timestamp(self.history_start), stamp.tz_localize(None) + pd.Timedelta(days=1))
+                axis.set_ylim(0, max(float(daily["cumulative_tokens"].iloc[-1]) * 1.12, 1))
+                axis.yaxis.set_major_locator(MaxNLocator(nbins=7, integer=True))
                 charts.setup_date_axis(axis)
             figure.text(
                 0.99, 0.99, f"Through {day:%Y-%m-%d} ({self.target_tz})",
@@ -270,6 +298,10 @@ def export_animations(
             "duration_seconds": len(dates) / options.fps,
             "model_colors": {model: to_hex(color) for model, color in renderer.model_colors.items()},
         })
+        if options.gif:
+            gif_path = path.with_suffix(".gif")
+            convert_mp4_to_gif(path, gif_path, executable)
+            results.append({**results[-1], "file": gif_path.name, "format": "gif", "codec": "gif"})
     return results
 
 
@@ -307,19 +339,21 @@ def read_report(directory: Path) -> tuple[pd.DataFrame, list[RunningInterval], d
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="python -m codex_usage animate", description="从已有数据文件按编号生成 MP4 动画，不重新扫描日志或更新静态图片。")
+    parser = argparse.ArgumentParser(prog="python -m codex_usage animate", description="从已有数据文件按编号生成 MP4 动画，可同时导出 GIF，不重新扫描日志或更新静态图片。")
     parser.add_argument("--chart", type=int, nargs="+", choices=range(1, 14), required=True, metavar="NUMBER", help="图片编号，例如 --chart 6 或 --chart 2 8。")
     parser.add_argument("--output", type=Path, default=Path("codex_usage_report"), help="已有 summary.json、events.csv 所在的结果目录，也是动画输出目录。")
     parser.add_argument("--start", help="第一帧本地日期，YYYY-MM-DD；默认结束日期的 30 天前。")
     parser.add_argument("--end", help="最后一帧本地日期，YYYY-MM-DD；默认今天。")
     parser.add_argument("--fps", type=int, default=4, help="每秒帧数，默认 4。")
     parser.add_argument("--dpi", type=int, default=100, help="动画 DPI，默认 100。")
+    parser.add_argument("--gif", action="store_true", help="同时生成循环播放的 GIF 动图，默认只生成 MP4。")
     parser.add_argument("--top-threads", type=int, default=15, help="06 图任务数量，默认 15。")
     args = parser.parse_args(argv)
     try:
         options = AnimationOptions(
             charts=tuple(dict.fromkeys(args.chart)), start=charts.parse_date_argument(args.start, "--start"),
             end=charts.parse_date_argument(args.end, "--end"), fps=args.fps, dpi=args.dpi,
+            gif=args.gif,
         )
         if args.top_threads <= 0:
             raise ValueError("--top-threads 必须大于 0。")
@@ -341,7 +375,7 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             if staged is not None:
                 staged.unlink(missing_ok=True)
-        print(f"已生成 {len(results)} 个 MP4 动画：{directory}")
+        print(f"已生成 {len(results)} 个动画文件：{directory}")
         return 0
     except (OSError, ValueError, KeyError, RuntimeError) as exc:
         charts.eprint(f"错误：{exc}；请确认 --output 指向已有结果目录，必要时先运行 report。")

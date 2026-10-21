@@ -9,3 +9,4 @@ requirements.txt text eol=lf
 *.png binary
 *.jpg binary
 *.mp4 binary
+*.gif binary

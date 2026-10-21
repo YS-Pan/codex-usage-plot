@@ -11,6 +11,7 @@ __pycache__/
 /codex_usage_report/*
 !/codex_usage_report/02_cumulative_tokens.png
 !/codex_usage_report/02_cumulative_tokens.mp4
+!/codex_usage_report/02_cumulative_tokens.gif
 !/codex_usage_report/10_daily_running_time.png
 /codex_usage_cache.sqlite3*
 /codex_usage_demo/

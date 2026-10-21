@@ -2,9 +2,16 @@
 
 从本机 Codex 日志生成用量图片：token、运行时间、缓存未命中率、模型分布和 API 费用估算。
 
-[![累计 token 用量，点击查看动画](codex_usage_report/02_cumulative_tokens.png)](codex_usage_report/02_cumulative_tokens.mp4)
+![累计 token 用量动画](codex_usage_report/02_cumulative_tokens.gif)
 
-[图 2 动画（MP4，点击查看或下载）](codex_usage_report/02_cumulative_tokens.mp4)：按日推进，模型颜色始终一致。
+[查看或下载 MP4 版本](codex_usage_report/02_cumulative_tokens.mp4)。动画按日推进，坐标轴随当时数据缩放，模型颜色始终一致。
+
+<details>
+<summary>查看累计用量静态图片</summary>
+
+![累计 token 用量](codex_usage_report/02_cumulative_tokens.png)
+
+</details>
 
 ![每日运行时间](codex_usage_report/10_daily_running_time.png)
 

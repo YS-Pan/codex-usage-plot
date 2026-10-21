@@ -9,6 +9,7 @@ GUI 会顺序生成用量与费用图片，并导出数据文件。CLI 需分别
 - `01_daily_tokens.png`：按模型堆叠的每日用量柱状图和总用量的 7 日移动平均，各模型的每日用量累加后对应 02 图；
 - `02_cumulative_tokens.png`：按模型堆叠的本地累计 token 用量，使用不透明色块且不绘制边界折线；auto-review 始终放在最上层，其余模型按首次出现时间从下到上排列，颜色与 08、09 对应，图例列出累计用量，保留 unknown 等所有记录中的模型；
 - `02_cumulative_tokens.mp4`：默认生成的图 2 动画，从 30 天前按日推进到今天；颜色和堆叠顺序在整个动画中固定。其他编号的 MP4 按需生成，文件名沿用同名图片的主文件名，见 [动画用法](usage.md#动画)；
+- `02_cumulative_tokens.gif`：通过 `animate --chart 2 --gif` 按需生成的 GIF 动图，直接用于 README 的动画展示；与 MP4 使用相同的画面、逐帧坐标缩放和播放速度。其他编号同样支持 `--gif`；
 - `03_daily_composition.png`：输入、缓存输入、可见输出、推理输出等构成，使用对数 Y 轴独立折线显示；
 - `04_weekly_by_source.png`：按 desktop、CLI、subagent、auto-review 等来源分组；
 - `05_weekday_hour_heatmap.png`：按本地星期和小时统计的热力图，采用彩虹色阶和对数颜色刻度，零用量的时段显示色阶最低颜色；

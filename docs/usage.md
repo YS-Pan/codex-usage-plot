@@ -77,9 +77,12 @@ GUI「更新图片」和 CLI `report` 默认额外生成 `02_cumulative_tokens.m
 python -m codex_usage animate --chart 6
 python -m codex_usage animate --chart 2 8 --start 2026-09-01 --end 2026-09-30 --fps 4
 python -m codex_usage animate --chart 12 --output report
+python -m codex_usage animate --chart 2 --gif
 ```
 
 `animate --output` 指定**已有** `events.csv` 和 `summary.json` 的结果目录，也将动画写到那里。10 图还需要 `running_intervals.csv`。时区沿用汇总文件；使用已有数据文件时，只能重放其中保留的记录。如需最新数据，先运行 `report` 或点击「更新图片」。可用 `--dpi` 调整动画分辨率，`--top-threads` 调整 06 图的任务数量。
+
+`--gif` 会在 MP4 之外生成同名 GIF，适合在 GitHub README 中直接循环播放。GIF 复用 MP4 的帧、坐标缩放和播放速度，整个动图使用统一调色板。日常「更新图片」仍默认只生成图 2 的 MP4；GIF 按需导出。
 
 重新读取日志并同时生成指定动画，或暂时跳过所有动画：
 
@@ -88,7 +91,7 @@ python -m codex_usage report --timezone Asia/Shanghai --incremental --animations
 python -m codex_usage report --timezone Asia/Shanghai --incremental --no-animations
 ```
 
-动画按日显示截至该日的统计，起始日前的累计量保留；空闲日也显示，最后一天只使用当前时刻已记录的数据。整个动画预先固定模型颜色及堆叠顺序，与对应静态图片配色一致。详细口径见 [动画快照](../dev_doc/statistics.md#动画快照)。选择不生成某个动画时，目录中以前生成的 MP4 会保留。
+动画按日显示截至该日的统计，起始日前的累计量保留；空闲日也显示，最后一天只使用当前时刻已记录的数据。图 2 的横、纵坐标轴随每帧的日期和累计量缩放。整个动画预先固定模型颜色及堆叠顺序，与对应静态图片配色一致。详细口径见 [动画快照](../dev_doc/statistics.md#动画快照)。选择不生成某个动画时，目录中以前生成的 MP4 会保留。
 
 MP4 使用 H.264 编码。动画依赖随 `requirements.txt` 安装，常见平台无需另行配置 FFmpeg；旧环境运行 `python -m codex_usage setup` 补齐依赖。生成失败会保留同名旧动画，错误显示在终端或 GUI 运行日志中。
 
