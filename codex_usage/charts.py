@@ -936,7 +936,7 @@ def add_week_start(events: pd.DataFrame) -> pd.DataFrame:
     result = events.copy()
     local_midnight = result["timestamp"].dt.normalize()
     result["week_start"] = local_midnight - pd.to_timedelta(
-        result["timestamp"].dt.dayofweek, unit="D"
+        result["timestamp"].dt.day_of_week, unit="D"
     )
     return result
 
@@ -1372,7 +1372,7 @@ def plot_activity_heatmap(
     events: pd.DataFrame, output_dir: Path, image_format: str, dpi: int
 ) -> Path:
     heat_source = events.assign(
-        weekday=events["timestamp"].dt.dayofweek,
+        weekday=events["timestamp"].dt.day_of_week,
         hour=events["timestamp"].dt.hour,
     )
     heat = (
