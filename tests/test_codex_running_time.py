@@ -230,6 +230,67 @@ class RunningIntervalParserTests(unittest.TestCase):
         self.assertEqual((result.end - result.start).total_seconds(), 30)
         self.assertEqual(len(self.tracker.intervals), 1)
 
+    def test_token_turn_id_fills_a_missing_start_id_and_survives_checkpoint(self) -> None:
+        self.observe("task_started", "2026-08-29T01:00:00Z")
+        self.observe("token_count", "2026-08-29T01:01:00Z", turn_id="turn-1")
+        restored = RunningIntervalTracker("test.jsonl", self.stats)
+        restored.restore_checkpoint(self.tracker.checkpoint())
+        restored.observe("event_msg", {"type": "task_complete"}, "2026-08-29T01:02:00Z")
+        self.assertEqual(len(restored.intervals), 1)
+        result = restored.intervals[0]
+        self.assertEqual(result.turn_id, "turn-1")
+        self.assertEqual(result.status, "completed")
+        self.assertEqual((result.end - result.start).total_seconds(), 120)
+
+    def test_conflicting_token_turn_id_does_not_extend_or_start_a_turn(self) -> None:
+        self.observe("task_started", "2026-08-29T01:00:00Z", turn_id="old")
+        self.observe("token_count", "2026-08-29T01:01:00Z", turn_id="old")
+        self.observe("token_count", "2026-08-29T02:00:00Z", turn_id="new")
+        self.assertIsNone(self.tracker.active)
+        self.observe("task_complete", "2026-08-29T02:01:00Z")
+        self.tracker.finish_open_turn()
+        self.assertEqual(len(self.tracker.intervals), 1)
+        result = self.tracker.intervals[0]
+        self.assertEqual(result.turn_id, "old")
+        self.assertEqual(result.status, "incomplete")
+        self.assertEqual(result.end, instant("2026-08-29T01:01:00Z"))
+        self.assertEqual(self.stats.invalid_intervals, 1)
+
+    def test_token_turn_id_alone_does_not_invent_a_start(self) -> None:
+        self.observe("token_count", "2026-08-29T01:01:00Z", turn_id="turn-1")
+        self.tracker.finish_open_turn()
+        self.assertIsNone(self.tracker.active)
+        self.assertEqual(self.tracker.intervals, [])
+
+    def test_token_turn_attribution_agrees_in_full_and_incremental_scans(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sessions = root / "sessions"
+            sessions.mkdir()
+            path = sessions / "one.jsonl"
+            items = [
+                {"timestamp": "2026-08-29T00:00:00Z", "type": "session_meta", "payload": {"id": "s1"}},
+                {"timestamp": "2026-08-29T01:00:00Z", "type": "event_msg", "payload": {"type": "task_started"}},
+                {"timestamp": "2026-08-29T01:01:00Z", "type": "event_msg", "payload": {
+                    "type": "token_count", "turn_id": "t1", "info": {
+                        "last_token_usage": {"input_tokens": 100, "output_tokens": 10, "total_tokens": 110},
+                    },
+                }},
+            ]
+            path.write_text("".join(json.dumps(item) + "\n" for item in items), encoding="utf-8")
+            cache = root / "cache.sqlite3"
+            collect_usage_data(root, SHANGHAI, progress=False, cache_path=cache, incremental=True)
+            completion = {"timestamp": "2026-08-29T01:02:00Z", "type": "event_msg", "payload": {"type": "task_complete"}}
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(completion) + "\n")
+            fresh = collect_usage_data(root, SHANGHAI, progress=False)
+            cached = collect_usage_data(root, SHANGHAI, progress=False, cache_path=cache, incremental=True)
+            self.assertEqual(cached[0]["turn_id"].tolist(), ["t1"])
+            self.assertEqual(cached[1], fresh[1])
+            self.assertEqual(cached[1][0].turn_id, "t1")
+            self.assertEqual(cached[1][0].status, "completed")
+            self.assertEqual((cached[1][0].end - cached[1][0].start).total_seconds(), 120)
+
     def test_completion_can_recover_a_missing_start_marker(self) -> None:
         end = instant("2026-08-29T02:00:00Z")
         self.observe(

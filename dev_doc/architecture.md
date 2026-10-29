@@ -15,10 +15,11 @@
 | 文件 | 职责与主要入口 |
 | --- | --- |
 | [`codex_usage/charts.py`](../codex_usage/charts.py) | `discover_rollouts` 查找日志；`rollout_lines` 流式读取；`parse_rollout` 提取记录；`collect_usage_data` 汇总与去重；`aggregate_*` 聚合；`export_report` 输出图片与数据文件 |
+| [`codex_usage/query.py`](../codex_usage/query.py)、[`codex_usage/query_cli.py`](../codex_usage/query_cli.py) | `query_usage` 复用采集与去重，按 ID / 模型 / 精确时间筛选并返回可 JSON 序列化数据；CLI 处理清单文件、标准输出、CSV 与退出码 |
 | [`codex_usage/animations.py`](../codex_usage/animations.py) | `AnimationOptions` 控制编号、日期与帧率；`FrameRenderer` 复用图片函数生成快照；`export_animations` 流式编码 MP4；`animate` 从已有数据文件按需生成动画 |
 | [`codex_usage/running_time.py`](../codex_usage/running_time.py) | `RunningIntervalTracker` 重建回合区间；`deduplicate_running_intervals` 去重；`aggregate_daily_running_time` 按本地日期计算合并及相加时长 |
 | [`codex_usage/cache.py`](../codex_usage/cache.py) | `UsageCache` 管理 SQLite 事务与记录；`can_resume`、`checkpoint_hashes` 判断能否从旧进度续读 |
-| [`codex_usage/cost.py`](../codex_usage/cost.py) | `calculate_event_costs` 按 `OFFICIAL_PRICES` 逐请求计算费用，供 06 任务费用和 13 图复用；独立脚本读取 `events.csv`，生成累计费用与情景结果，并复用图表模块的字体、颜色和保存逻辑 |
+| [`codex_usage/cost.py`](../codex_usage/cost.py) | `calculate_model_event_costs` 根据 [`model_prices.py`](../codex_usage/model_prices.py) 中的历史价格逐请求计算费用，供 06 任务费用和 13 图复用；独立脚本读取 `events.csv`，生成累计费用与情景结果，并复用图表模块的字体、颜色和保存逻辑 |
 | [`codex_usage/thread_metadata.py`](../codex_usage/thread_metadata.py) | 在日期筛选前结合主会话开始时间、目录与本地保存的项目元数据，补齐 06 图的项目名和开始日期；项目名每次刷新，不写入原始日志 |
 | [`codex_usage/gui.py`](../codex_usage/gui.py) | `UsageApp` 管理 Tk 控件；`ReportOptions` 保存选项；`generate_reports` 在后台顺序执行两个 CLI |
 | [`codex_usage/environment.py`](../codex_usage/environment.py)、[`启动用量统计.cmd`](../启动用量统计.cmd) | 寻找 Python、创建 / 检查项目 `.venv`、安装缺失依赖并启动 GUI |
@@ -49,9 +50,17 @@ flowchart TD
 5. 根据覆盖日期或指定范围生成完整日历日序列，分别聚合用量、缓存比例、小时用量和运行时间。逐小时费用复用 12 图的小时索引，先通过 `calculate_event_costs` 按记录单价和长上下文规则计算每次请求，再按小时与模型求和；无记录单价的模型仅统计未计价请求和用量。
 6. `export_report` 写入 9 个 CSV、用量图片、13 逐小时费用图片与 `summary.json`。`recent_hourly_api_cost.csv` 保存逐小时金额和未计价统计；`summary.json` 的 `recent_hourly_api_cost` 保存总额、未计价统计及单价来源、核实日期和规则，`charts` 包含 13 图。费用脚本再独立读取 `events.csv` 输出费用表、JSON 和 09 图。
 
-精确定义与零输入、跨日、重复记录等边界见 [统计与数据约定](statistics.md)。无 token 但有运行区间时，仍会生成运行时间、缓存未命中率和最近七天逐小时图；部分 token 图省略。完全无可用活动时 CLI 返回非零并提示检查目录。
+精确定义与零输入、跨日、重复记录等边界见 [统计与数据约定](statistics.md)。无 token 但有运行区间时，仍会生成运行时间、缓存未命中率和最近七天逐小时图；部分 token 图省略。完全无可用活动时 `report` 返回非零并提示检查目录。
 
-### 动画生成
+## 纯数据查询路径
+
+`query` 经 `query_cli.main` 调用 `query_usage`，复用 `collect_usage_data` 的普通 / 压缩读取、缓存、去重及根任务归属。采集函数的可选 `inventory` 参数补充会话头、直接父子关系和回合模型 / 推理强度元数据，包含没有 token 的会话与回合；原有三元组返回值保持兼容。这些白名单元数据也进入增量解析检查点，缓存格式由 `CACHE_VERSION` 管理。
+
+查询在完整采集后筛选，结合回合元数据关联运行区间；无法可靠按模型分摊的混合或未知回合写入诊断。结果包含版本、筛选范围、事件、会话 / 回合分组、两种时长和匹配 / 缺失信息。默认只读扫描，无缓存写入、文件导出或图片渲染；显式指定缓存或输出目录才写相应文件。查询缓存不保存某次筛选后的子集，CLI 的默认增量查询缓存为 `codex_usage_query_cache.sqlite3`。
+
+对外协议与调用示例集中在 [供其他项目调用](../docs/integration.md)，筛选与时间含义见 [纯数据查询统计约定](statistics.md#纯数据查询)。
+
+## 动画生成
 
 `export_report` 在静态图片后默认调用 `export_animations` 生成 02 MP4；其他编号仅显式选择时生成。GUI 复用该默认行为，仍在后台子进程运行。独立 `animate` 读取已有 `events.csv`、`summary.json` 和运行区间，不重新扫描日志；只写所选 MP4，并更新汇总的 `animations` 条目。
 
@@ -89,7 +98,7 @@ flowchart TD
 
 Windows 启动器优先使用工具目录的 `.venv`，其次尝试 `py -3`，最后查找 PATH 中的 Python。`codex_usage/environment.py` 用标准库准备环境，检查 Python 版本、依赖导入和最低版本、时区数据；启动 GUI 时还检查 Tkinter。环境不完整时在本项目 `.venv` 中安装 `requirements.txt`，正常时跳过安装。`--check` 只检查、不安装、不启动。
 
-GUI 默认使用上海时区、包含归档并统计全部日期。`codex_usage_settings.json` 保存用户上次选择的数据目录、IANA 时区和归档选项；格式无效时恢复默认值。CLI 保留独立参数，包括日期范围、输出目录、格式等；其默认时区 `local` 是系统当前 UTC 偏移，跨夏令时日期应指定 IANA 时区。
+GUI 默认使用上海时区、包含归档并统计全部日期。`codex_usage_settings.json` 保存用户上次选择的数据目录、IANA 时区和归档选项；格式无效时恢复默认值。`report` 保留独立参数，包括日期范围、输出目录、格式等；其默认时区 `local` 是系统当前 UTC 偏移，跨夏令时日期应指定 IANA 时区。纯数据 `query` 默认使用 `UTC`，接受精确时间。
 
 GUI 使用紧凑的原生控件布局，保留「更新图片」「打开图片文件夹」、一行状态，以及设置、日志和帮助入口。主按钮默认调用增量模式，缓存缺失时自动完整读取。数据目录、时区、归档选项及「重新完整读取」放在可折叠设置中；校验失败时自动展开设置。
 
@@ -103,7 +112,7 @@ Tk 主线程通过 `after` 消费队列。已知总数时显示当前阶段的�
 
 复用 `configure_matplotlib`、`setup_date_axis`、`format_tokens` 和 `save_figure`。`save_figure` 先在**输出目录内**渲染临时文件，再替换目标并清理临时文件，以保持 Windows 查看器的读取权限兼容。
 
-GUI 的结果路径锚定工具目录；CLI 默认输出相对当前工作目录。CSV 使用 UTF-8 BOM，JSON 使用 UTF-8；导出日期保留时区，无定义的 JSON 比例使用 `null`。具体文件名、编号和字段见 [输出文件参考](../docs/reference.md)。
+GUI 的结果路径锚定工具目录；`report` 默认输出相对当前工作目录，`query` 默认只写标准输出。CSV 使用 UTF-8 BOM，JSON 使用 UTF-8；导出日期保留时区，无定义的 JSON 比例使用 `null`。图片生成文件名、编号和字段见 [输出文件参考](../docs/reference.md)，查询文件见 [集成说明](../docs/integration.md#输出与退出码)。
 
 移动代码目录不改变本地数据的位置：GUI、环境准备和默认缓存都从包目录向上定位项目根目录，继续使用原来的 `.venv`、`codex_usage_report/`、`codex_usage_cache.sqlite3` 与设置文件。
 

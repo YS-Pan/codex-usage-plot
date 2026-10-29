@@ -7,6 +7,7 @@
 README 首先面向决定是否安装的用户，优先展示真实用量图片；安装和环境准备面向 AI agent，步骤集中在 `docs/installation.md`；日常使用面向手动打开 GUI 的用户，主操作为增量「更新图片」。面向用户统一使用「图片」称呼，CSV / JSON 称为数据文件；保留既有命令与文件名。开发参考从 [dev_doc/README.md](dev_doc/README.md) 进入，详细技术说明维护在对应专题中。
 
 - `codex_usage/charts.py`：流式解析 rollout JSONL 元数据，聚合 token 用量，导出图表、CSV 和 `summary.json`。
+- `codex_usage/query.py`、`codex_usage/query_cli.py`：供其他项目调用的纯数据查询，默认 JSON 标准输出；接口与返回协议见 [集成说明](docs/integration.md)。
 - `codex_usage/animations.py`、`tests/test_animations.py`：按日期重放图片并生成 MP4；默认仅生成 02 动画，其余编号按需生成，整个动画固定模型颜色。
 - `codex_usage/running_time.py`：解析回合运行区间、去重、按本地日期拆分并计算合并和相加时长。
 - `codex_usage/cost.py`：基于逐请求用量和记录的单价计算 API 费用估算。
@@ -39,6 +40,7 @@ GUI 默认包含归档记录，并将结果写入工具目录的 `codex_usage_re
 
 - 只读取会话元数据、模型/turn ID、token 计数、活动类型和时间戳；不使用或导出用户消息、助手回答、推理或工具输出正文，不修改原始日志。
 - 用量仅代表本机仍保留的日志。不要表述为服务端账户用量或剩余额度。
+- 纯数据查询按实际 session / turn 清单记账，用量事件数不直接称为服务端请求数；保留未匹配、缺失和未完成诊断。按模型筛选时，混合或未知模型回合的时长不按 token 比例推算。
 - token 事件优先采用 `last_token_usage`，缺失时才采用相邻 `total_token_usage` 差值。保留已有分叉、迁移重复事件去重规则。
 - 缓存输入是输入的子集，推理输出是输出的子集；构成图需要拆成互斥部分，不能重复相加。
 - 缓存图展示未命中率，即 `100% − cached_input_tokens / input_tokens × 100%`，纵轴按实际范围缩放。跨请求或日期先汇总分子和分母；7 日趋势使用日历日窗口，不平均每日百分比。零输入对应缺失值，不能当作 0% 未命中率；缓存写入计入未命中部分。

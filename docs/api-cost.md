@@ -10,12 +10,13 @@
 python -m codex_usage cost
 ```
 
-费用计算器采用 [OpenAI 官方标准 API 文本 token 单价](https://developers.openai.com/api/docs/pricing)，单位为每百万 token（美元）。GPT-6.1 Sol 单价于 2026-10-07 核实，其他模型沿用 2026-09-23 的核实记录：
+费用计算器采用 [OpenAI 官方标准 API 文本 token 单价](https://developers.openai.com/api/docs/pricing)，单位为每百万 token（美元）。GPT-6.1 Terra 单价于 2026-10-29 核实，GPT-6.1 Sol 于 2026-10-07 核实，其他模型沿用 2026-09-23 的核实记录：
 
 | 模型 | 输入 | 缓存输入 | 缓存写入 | 输出 |
 | --- | ---: | ---: | ---: | ---: |
 | [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra) | $10.00 | $1.00 | $12.50 | $50.00 |
 | [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol) | $2.00 | $0.10 | $2.50 | $10.00 |
+| [GPT-6.1 Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra) | $1.00 | $0.05 | $1.25 | $5.00 |
 | [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol) | $2.00 | $0.20 | $2.50 | $10.00 |
 | [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) | $0.10 | $0.01 | $0.125 | $0.50 |
 | [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol) | $4.00 | $0.40 | $5.00 | $20.00 |
@@ -29,7 +30,7 @@ python -m codex_usage cost
 
 费用计算先按每个事件的 `timestamp` 选择该模型的费率，再应用该档的缓存写入、长上下文阈值和倍率，最后按任务、模型、日期或小时汇总。06 任务排行、09 累计费用、13 逐小时费用及相应动画均使用同一选择规则；auto-review 情景按事件时间选择假设模型的费率，仍不代表 auto-review 的官方价格。
 
-- `codex_usage/cost.py` 的 `OFFICIAL_PRICE_HISTORY` 保存每个模型按时间升序排列的 `PricePeriod`。首项 `effective_from=None` 是兼容基线，保留原有算法对旧日志使用的单价；它不声称这就是模型发布以来的完整真实价格历史。目前所有模型都只有这一档，因此现有估算数值不变。
+- `codex_usage/model_prices.py` 的 `OFFICIAL_PRICE_HISTORY` 保存每个模型按时间升序排列的 `PricePeriod`。首项 `effective_from=None` 是兼容基线，保留原有算法对旧日志使用的单价；它不声称这就是模型发布以来的完整真实价格历史。目前所有模型都只有这一档；旧模型保留原有费率，新加入 GPT-6.1 Terra 的历史记录采用已核实价格作为兼容基线，并不声称已知其生效时间。
 - 后续档的 `effective_from` 是生效瞬间，包含该瞬间，适用到下一档生效前。时间比较统一换算成 UTC；有偏移的时间按同一绝对时刻比较，无时区时间和仅日期值按 UTC 解释。选择费率不会改写事件原时间列，所以原有本地日期、小时和夏令时分桶保持不变。
 - Python 的 `calculate_model_event_costs(events, model)` 在缺少时间列、时间为空或无法解析时使用兼容基线，避免以后新增费率改变这些旧记录的估算。它不推测事件发生时间。按日期 / 小时聚合及费用 CLI 仍要求可用于分桶的有效时间戳；上述回退仅决定单价，不为缺失时间补日期。
 - `calculate_event_costs(events, price)` 仍是明确指定 `ModelPrice` 的固定单价接口，不要求时间列。`ModelPrice` 字段和 `OFFICIAL_PRICES` 的模型到单价字典结构保持不变；后者由历史表派生，表示最新记录的一档，不能用它直接重算需要区分历史日期的日志。

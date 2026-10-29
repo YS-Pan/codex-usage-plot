@@ -30,6 +30,8 @@
 
 在项目根目录通过 `python -m codex_usage` 运行。旧版根目录脚本已归入 `codex_usage/` 包；原用量、费用和 GUI 入口分别改为 `report`、`cost`、`gui` 子命令，原有统计参数继续跟在子命令后。
 
+其他项目需要按子代理会话、回合或模型取得 token 数据时，使用 `python -m codex_usage query`。它默认只向标准输出返回 JSON；筛选、CSV、Python 接口和自动化调用示例见 [供其他项目调用](integration.md)。本节其余参数与默认值说明针对图片生成命令 `report`。
+
 以下示例使用已安装依赖的 `python`。若未激活环境，Windows 将其替换为 `.\.venv\Scripts\python.exe`，macOS / Linux 替换为 `.venv/bin/python`。
 
 ```sh
@@ -37,7 +39,7 @@ python -m codex_usage report --timezone Asia/Shanghai --incremental
 python -m codex_usage cost
 ```
 
-CLI 的数据目录默认读取 `CODEX_HOME` 或 `~/.codex`；输出目录默认是**当前工作目录**下的 `codex_usage_report`。CLI 的时区默认 `local`，表示系统当前 UTC 偏移；统计跨夏令时日期时请明确指定 IANA 时区。
+`report` 的数据目录默认读取 `CODEX_HOME` 或 `~/.codex`；输出目录默认是**当前工作目录**下的 `codex_usage_report`。`report` 的时区默认 `local`，表示系统当前 UTC 偏移；统计跨夏令时日期时请明确指定 IANA 时区。
 
 指定目录与日期（首尾日期均包含）：
 

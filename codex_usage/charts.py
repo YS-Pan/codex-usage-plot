@@ -54,6 +54,7 @@ from .running_time import (
 )
 from .thread_metadata import directory_name, enrich_thread_metadata
 from .progress import ProgressReporter, report_progress
+from .model_prices import AUTO_REVIEW_MODEL
 
 if TYPE_CHECKING:
     from .animations import AnimationOptions
@@ -378,7 +379,35 @@ def session_parent_thread_id(meta: dict[str, Any]) -> str:
     subagent = source.get("subagent") if isinstance(source, dict) else None
     spawn = subagent.get("thread_spawn") if isinstance(subagent, dict) else None
     nested_parent = spawn.get("parent_thread_id") if isinstance(spawn, dict) else None
-    return first_nonempty(nested_parent, meta.get("parent_thread_id"))
+    direct_spawn = source.get("thread_spawn") if isinstance(source, dict) else None
+    direct_parent = direct_spawn.get("parent_thread_id") if isinstance(direct_spawn, dict) else None
+    return first_nonempty(nested_parent, direct_parent, meta.get("parent_thread_id"))
+
+
+def populate_usage_inventory(
+    inventory: dict[str, Any] | None,
+    sessions: dict[str, dict[str, Any]],
+    parents: dict[str, str],
+    turns: Iterable[dict[str, Any]],
+) -> None:
+    """Expose metadata even for sessions and turns with no token events."""
+    if inventory is None:
+        return
+    merged: dict[tuple[str, str], dict[str, Any]] = {}
+    for turn in turns:
+        key = (turn["session_id"], turn["turn_id"])
+        record = merged.setdefault(key, {
+            "session_id": key[0], "turn_id": key[1],
+            "models": [], "reasoning_efforts": [],
+        })
+        for field_name in ("models", "reasoning_efforts"):
+            record[field_name] = sorted(set(record[field_name]) | set(turn[field_name]))
+    inventory["sessions"] = {
+        session_id: {**meta, "parent_thread_id": parents.get(session_id, "")}
+        for session_id, meta in sorted(sessions.items())
+    }
+    inventory["parents"] = dict(sorted(parents.items()))
+    inventory["turns"] = [merged[key] for key in sorted(merged)]
 
 
 def resolve_thread_roots(parent_threads: dict[str, str]) -> dict[str, str]:
@@ -439,11 +468,33 @@ def parse_rollout(
     meta: dict[str, Any] = cursor.get("meta", {})
     current_turn_id = cursor.get("turn_id", "")
     current_model = cursor.get("model", "unknown")
+    current_reasoning_effort = cursor.get("reasoning_effort", "")
     previous_total: dict[str, int] | None = cursor.get("previous_total")
     cursor.setdefault("offset", 0)
     cursor.setdefault("parents", {})
+    turns = cursor.setdefault("turns", [])
+    turn_records = {(turn["session_id"], turn["turn_id"]): turn for turn in turns}
     cursor["bytes_read"] = 0
     log_file = relative_log_path(path, codex_home)
+
+    def register_turn(include_context: bool = True) -> None:
+        if not current_turn_id:
+            return
+        session_id = first_nonempty(meta.get("id"), meta.get("session_id"))
+        key = (session_id, current_turn_id)
+        if key not in turn_records:
+            turn_records[key] = {
+                "session_id": session_id, "turn_id": current_turn_id,
+                "models": [], "reasoning_efforts": [],
+            }
+            turns.append(turn_records[key])
+        if include_context:
+            for field_name, value in (("models", current_model),
+                                      ("reasoning_efforts", current_reasoning_effort)):
+                if value and (field_name != "models" or value != "unknown"):
+                    values = turn_records[key][field_name]
+                    if value not in values:
+                        values.append(value)
 
     try:
         for line in rollout_lines(path, cursor, read_limit):
@@ -492,11 +543,22 @@ def parse_rollout(
                 source = meta.get("source")
                 subagent = source.get("subagent") if isinstance(source, dict) else None
                 spawn = subagent.get("thread_spawn") if isinstance(subagent, dict) else None
-                nested_parent = spawn.get("parent_thread_id") if isinstance(spawn, dict) else None
                 meta["_source_category"] = category
                 meta["source"] = {}
-                if isinstance(nested_parent, str) and nested_parent:
-                    meta["source"]["subagent"] = {"thread_spawn": {"parent_thread_id": nested_parent}}
+                direct_spawn = source.get("thread_spawn") if isinstance(source, dict) else None
+                parent_turn_ids = []
+                for container, spawn_metadata in (("subagent", spawn), ("", direct_spawn)):
+                    if not isinstance(spawn_metadata, dict):
+                        continue
+                    allowed = {
+                        key: value for key in ("parent_thread_id", "parent_turn_id")
+                        if isinstance(value := spawn_metadata.get(key), str) and value.strip()
+                    }
+                    if allowed:
+                        destination = meta["source"].setdefault(container, {}) if container else meta["source"]
+                        destination["thread_spawn"] = allowed
+                    parent_turn_ids.append(allowed.get("parent_turn_id"))
+                meta["parent_turn_id"] = first_nonempty(*parent_turn_ids)
                 # Register header-only sessions too: they can bridge a nested
                 # subagent to its main thread even without any token events.
                 session_id = first_nonempty(meta.get("id"), meta.get("session_id"))
@@ -508,17 +570,33 @@ def parse_rollout(
                 continue
 
             if event_type == "turn_context":
-                current_turn_id = first_nonempty(payload.get("turn_id"), current_turn_id)
+                next_turn_id = first_nonempty(payload.get("turn_id"), current_turn_id)
+                if next_turn_id != current_turn_id:
+                    current_reasoning_effort = ""
+                current_turn_id = next_turn_id
                 current_model = first_nonempty(payload.get("model"), current_model) or "unknown"
+                current_reasoning_effort = first_nonempty(
+                    payload.get("effort"), payload.get("reasoning_effort"),
+                )
+                register_turn()
                 continue
 
             payload_type = payload.get("type")
             if event_type == "event_msg" and payload_type == "task_started":
-                current_turn_id = first_nonempty(payload.get("turn_id"), current_turn_id)
+                next_turn_id = first_nonempty(payload.get("turn_id"), current_turn_id)
+                if next_turn_id != current_turn_id:
+                    current_reasoning_effort = ""
+                current_turn_id = next_turn_id
+                register_turn(include_context=False)
                 continue
             if not (event_type == "event_msg" and payload_type == "token_count"):
                 continue
 
+            next_turn_id = first_nonempty(payload.get("turn_id"), current_turn_id)
+            if next_turn_id != current_turn_id:
+                current_reasoning_effort = ""
+            current_turn_id = next_turn_id
+            register_turn()
             stats.token_events_seen += 1
             info = payload.get("info")
             if not isinstance(info, dict):
@@ -562,6 +640,7 @@ def parse_rollout(
                 "turn_id": current_turn_id,
                 "title": title,
                 "model": current_model,
+                "reasoning_effort": current_reasoning_effort,
                 "source": source_label,
                 "originator": first_nonempty(meta.get("originator")) or "unknown",
                 "cwd": first_nonempty(meta.get("cwd")),
@@ -586,7 +665,7 @@ def parse_rollout(
         stats.files_failed += 1
     finally:
         cursor.update(meta=meta, turn_id=current_turn_id, model=current_model,
-                      previous_total=previous_total)
+                      reasoning_effort=current_reasoning_effort, previous_total=previous_total)
 
 
 def frame_from_records(
@@ -597,10 +676,11 @@ def frame_from_records(
 ) -> pd.DataFrame:
     columns = [
         "timestamp", "session_id", "thread_id", "parent_thread_id", "turn_id",
-        "title", "model", "source", "originator", "cwd", "log_file",
+        "title", "model", "reasoning_effort", "source", "originator", "cwd", "log_file",
         *RAW_TOKEN_COLUMNS, *COMPOSITION_COLUMNS,
     ]
     frame = pd.DataFrame.from_records(records, columns=columns)
+    frame["reasoning_effort"] = frame["reasoning_effort"].fillna("")
     frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True).dt.tz_convert(target_tz)
     if not frame.empty:
         # Resolve after all headers and request deduplication, before date filters.
@@ -644,6 +724,8 @@ def collect_cached_usage_data(
     progress: bool,
     cache_path: Path,
     incremental: bool,
+    *,
+    inventory: dict[str, Any] | None = None,
 ) -> tuple[pd.DataFrame, list[RunningInterval], ParseStats]:
     started = perf_counter()
     codex_home = codex_home.expanduser().resolve()
@@ -740,6 +822,7 @@ def collect_cached_usage_data(
 
         parent_threads: dict[str, str] = {}
         session_metadata: dict[str, dict[str, Any]] = {}
+        turns: list[dict[str, Any]] = []
         running_intervals = list(cache.load_intervals(active))
         for log in paths:
             entry = entries[log]
@@ -747,6 +830,7 @@ def collect_cached_usage_data(
             session_id = first_nonempty(meta.get("id"), meta.get("session_id"))
             if session_id:
                 session_metadata[session_id] = meta
+            turns.extend(entry["state"].get("turns", []))
             file_stats = restore_parse_stats(entry["stats"])
             for key, value in asdict(file_stats).items():
                 if key not in ("runtime", "scan", "files_seen"):
@@ -772,6 +856,7 @@ def collect_cached_usage_data(
         frame = frame_from_records(records, parent_threads, titles, target_tz)
         frame = enrich_thread_metadata(frame, codex_home, session_metadata)
         running_intervals = deduplicate_running_intervals(running_intervals, stats.runtime)
+        populate_usage_inventory(inventory, session_metadata, parent_threads, turns)
     scan.seconds = perf_counter() - started
     if progress:
         eprint(f"{scan.mode.capitalize()} scan: {scan.bytes_read / 1024**2:.2f} MiB parsed "
@@ -787,12 +872,14 @@ def collect_usage_data(
     *,
     cache_path: Path | None = None,
     incremental: bool = False,
+    inventory: dict[str, Any] | None = None,
 ) -> tuple[pd.DataFrame, list[RunningInterval], ParseStats]:
     if cache_path is not None:
         cache_path = cache_path.expanduser().resolve()
         try:
             return collect_cached_usage_data(
-                codex_home, target_tz, include_archived, progress, cache_path, incremental
+                codex_home, target_tz, include_archived, progress, cache_path, incremental,
+                inventory=inventory,
             )
         except (CacheInvalidError, sqlite3.DatabaseError) as exc:
             if isinstance(exc, sqlite3.DatabaseError):
@@ -810,7 +897,8 @@ def collect_usage_data(
             if progress:
                 eprint(f"缓存不可用，已保留为 {backup.name}；正在重新完整读取。")
             return collect_cached_usage_data(
-                codex_home, target_tz, include_archived, progress, cache_path, incremental
+                codex_home, target_tz, include_archived, progress, cache_path, incremental,
+                inventory=inventory,
             )
     report_progress("discover", "正在查找日志…", enabled=progress)
     files = discover_rollouts(codex_home, include_archived)
@@ -823,6 +911,7 @@ def collect_usage_data(
     running_intervals: list[RunningInterval] = []
     parent_threads: dict[str, str] = {}
     session_metadata: dict[str, dict[str, Any]] = {}
+    turns: list[dict[str, Any]] = []
 
     for index, path in enumerate(files, start=1):
         tracker = RunningIntervalTracker(relative_log_path(path, codex_home), stats.runtime)
@@ -839,6 +928,7 @@ def collect_usage_data(
         session_id = first_nonempty(meta.get("id"), meta.get("session_id"))
         if session_id:
             session_metadata[session_id] = meta
+        turns.extend(cursor.get("turns", []))
         tracker.finish_open_turn()
         running_intervals.extend(tracker.intervals)
         reporter.update(index, f"保留 {len(records):,} 条用量事件，读取失败 {stats.files_failed} 个文件")
@@ -846,6 +936,7 @@ def collect_usage_data(
     report_progress("organize", "正在整理用量与运行时间…", enabled=progress)
     frame = frame_from_records(records, parent_threads, titles, target_tz)
     frame = enrich_thread_metadata(frame, codex_home, session_metadata)
+    populate_usage_inventory(inventory, session_metadata, parent_threads, turns)
     return frame, deduplicate_running_intervals(running_intervals, stats.runtime), stats
 
 
@@ -1195,9 +1286,9 @@ def model_stack_colors(events: pd.DataFrame) -> dict[str, Any]:
     """Use chart 08's colors and chart 02's first-seen stacking order."""
     colors = breakdown_color_map(weekly_pivot(events, "model").columns)
     model_order = events.groupby("model")["timestamp"].min().sort_values(kind="stable").index.tolist()
-    if "codex-auto-review" in model_order:
-        model_order.remove("codex-auto-review")
-        model_order.append("codex-auto-review")
+    if AUTO_REVIEW_MODEL in model_order:
+        model_order.remove(AUTO_REVIEW_MODEL)
+        model_order.append(AUTO_REVIEW_MODEL)
     return {model: colors[model] for model in model_order}
 
 

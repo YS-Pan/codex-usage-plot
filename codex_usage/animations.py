@@ -255,9 +255,7 @@ class FrameRenderer:
             elif number == 7:
                 charts.plot_request_sizes_over_time(events, *arguments, source_colors=self.point_colors)
             elif number == 9:
-                parts = [cost.calculate_model_event_costs(events.loc[events["model"] == model], model)
-                         for model in cost.OFFICIAL_PRICES if (events["model"] == model).any()]
-                priced = pd.concat(parts) if parts else events.iloc[:0].assign(total_cost_usd=pd.Series(dtype=float))
+                _, priced = cost.summarize_official_models(events)
                 costs = cost.build_daily_costs(priced, {})
                 cost.plot_cumulative_cost(costs, output / "09_cumulative_api_cost.png", self.options.dpi, self.model_colors)
             elif number == 10:

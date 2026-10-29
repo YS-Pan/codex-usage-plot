@@ -29,6 +29,8 @@ Windows 双击 `启动用量统计.cmd`，点击「更新图片」。首次完�
 
 更多操作见 [使用指南](docs/usage.md)，文件清单见 [输出文件参考](docs/reference.md)。
 
+其他项目可通过 `python -m codex_usage query` 按会话、回合和模型取得 JSON / CSV，用于子代理或实验记账，默认只返回数据。命令与 Python 示例见 [供其他项目调用](docs/integration.md)。
+
 ## 安装
 
 需要 Python 3.10+；GUI 需要 Tkinter。Windows 可双击启动器自动准备项目环境；macOS / Linux 可通过命令行使用。

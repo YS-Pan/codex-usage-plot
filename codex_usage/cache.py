@@ -13,7 +13,7 @@ from typing import Any, Iterable
 
 
 # Bump when parsing or persisted metadata semantics change.
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 CHECKPOINT_BYTES = 4096
 
 
@@ -155,8 +155,18 @@ class UsageCache:
                     raise ValueError("Inconsistent byte checkpoint")
                 if any(not isinstance(entry["state"].get(key), dict) for key in ("meta", "parents", "runtime")):
                     raise ValueError("Invalid parser metadata")
-                if any(not isinstance(entry["state"].get(key), str) for key in ("model", "turn_id")):
+                if any(not isinstance(entry["state"].get(key), str) for key in ("model", "turn_id", "reasoning_effort")):
                     raise ValueError("Invalid model or turn ID")
+                turns = entry["state"].get("turns")
+                if not isinstance(turns, list) or any(
+                    not isinstance(turn, dict)
+                    or any(not isinstance(turn.get(key), str) for key in ("session_id", "turn_id"))
+                    or any(not isinstance(turn.get(key), list)
+                           or any(not isinstance(value, str) for value in turn[key])
+                           for key in ("models", "reasoning_efforts"))
+                    for turn in turns
+                ):
+                    raise ValueError("Invalid turn inventory")
             except (TypeError, ValueError) as exc:
                 raise CacheInvalidError("Invalid usage-cache checkpoint") from exc
             result[entry["log_file"]] = entry

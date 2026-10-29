@@ -20,6 +20,7 @@ CLI / 统计测试无需桌面显示；GUI 人工验收需要 Tcl/Tk 和桌面�
 | 费用估算 | `codex_usage/cost.py` | `tests/test_codex_usage_charts.py` 中费用相关测试，以及 `tests/test_historical_costs.py`；校验未知模型、长上下文阈值、缓存写入、UTC 生效边界和各费用入口一致性 |
 | 启动、选项和错误处理 | 启动器、`codex_usage/environment.py`、`codex_usage/gui.py` | `tests/test_user_entrypoints.py`；实际启动、生成、停止以及错误后重试 |
 | 包结构、命令入口和默认路径 | `codex_usage/__main__.py`、各模块的路径常量 | `tests/test_cli.py`；无依赖帮助、参数传递、源码根目录定位和标准 unittest 自动发现 |
+| 纯数据查询、外部项目调用和元数据清单 | `codex_usage/query.py`、`query_cli.py`、采集函数的 `inventory` | 查询 / CLI / inventory 合成测试；核对 ID 与后代、精确时间、混合模型时长、缺失诊断、缓存完整性及 JSON / CSV 编码 |
 | 纯文档文字与链接 | README、`docs/`、`dev_doc/` | 检查链接、路径、UTF-8 与 `git diff --check`，无需读取真实日志 |
 
 新增测试应覆盖真实边界，不为按钮文案或实现细节逐项建立机械测试。自动测试只使用合成日志，不依赖开发者个人数据。运行相关测试后，如果涉及多个模块或准备交付，再运行完整 `python -m unittest -v`。
@@ -54,6 +55,7 @@ CLI / 统计测试无需桌面显示；GUI 人工验收需要 Tcl/Tk 和桌面�
 | --- | --- |
 | 安装和环境准备 | `docs/installation.md`、根 README 的安装入口 |
 | 默认值、CLI 参数、GUI 操作 | `docs/usage.md`、根 README，必要时补常见问题 |
+| 纯数据查询参数、schema、退出码与 Python 接口 | `docs/integration.md`、`statistics.md`、相关命令帮助 |
 | 模块职责、数据流、持久化或线程边界 | `architecture.md` |
 | 字段计算含义、去重、分组或图表坐标约定 | `statistics.md`、`docs/reference.md` |
 | API 单价或估算假设 | `docs/api-cost.md`，对应源码与测试 |

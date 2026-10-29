@@ -178,9 +178,10 @@ class RunningIntervalTracker:
 
         if self.active is None:
             return
-        if event_type == "turn_context" and turn_id and not self.active.turn_id:
+        identifies_turn = event_type == "turn_context" or kind == "token_count"
+        if identifies_turn and turn_id and not self.active.turn_id:
             self.active.turn_id = turn_id
-        if event_type == "turn_context" and turn_id and turn_id != self.active.turn_id:
+        if identifies_turn and turn_id and turn_id != self.active.turn_id:
             self.finish_open_turn()
             return
         # Settings changes and other out-of-turn metadata are not evidence that
