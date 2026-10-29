@@ -23,12 +23,27 @@ python -m codex_usage cost
 | [GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna) | $0.20 | $0.02 | $0.25 | $1.20 |
 | [GPT-5.5](https://developers.openai.com/api/docs/models/gpt-5.5) | $5.00 | $0.50 | 按输入价，无额外费用 | $30.00 |
 
-[GPT-6 Sol 和 Luna 于 2026-09-22 发布](https://developers.openai.com/api/docs/changelog)。各模型输入超过 272K token 时，整次请求的输入与缓存部分按 2 倍、输出按 1.5 倍估算。GPT-5.6 及更新模型的缓存写入按普通输入价的 1.25 倍；[GPT-5.5 没有额外缓存写入费](https://developers.openai.com/api/docs/guides/prompt-caching)。[GPT-5.6 Sol 的促销价](https://developers.openai.com/api/docs/models/gpt-5.6-sol) 官方表示至少持续至 2026-11-21，日后重算历史记录时应留意价格变动。它会生成：
+[GPT-6 Sol 和 Luna 于 2026-09-22 发布](https://developers.openai.com/api/docs/changelog)。各模型输入超过 272K token 时，整次请求的输入与缓存部分按 2 倍、输出按 1.5 倍估算。GPT-5.6 及更新模型的缓存写入按普通输入价的 1.25 倍；[GPT-5.5 没有额外缓存写入费](https://developers.openai.com/api/docs/guides/prompt-caching)。2026-10-29 再次核对 [GPT-5.6 Sol 官方页面](https://developers.openai.com/api/docs/models/gpt-5.6-sol)，输入 / 缓存输入 / 输出仍为 $4 / $0.40 / $20；官方表示优惠至少持续至 2026-11-21，未确认之后一定涨价。本次只增加历史费率机制，保留已有单价和核实记录，不添加 2026-11-22 的价格条目。
 
-- `api_cost_by_model.csv`：具有官方单价的模型明细；
+## 按事件时间选择费率
+
+费用计算先按每个事件的 `timestamp` 选择该模型的费率，再应用该档的缓存写入、长上下文阈值和倍率，最后按任务、模型、日期或小时汇总。06 任务排行、09 累计费用、13 逐小时费用及相应动画均使用同一选择规则；auto-review 情景按事件时间选择假设模型的费率，仍不代表 auto-review 的官方价格。
+
+- `codex_usage/cost.py` 的 `OFFICIAL_PRICE_HISTORY` 保存每个模型按时间升序排列的 `PricePeriod`。首项 `effective_from=None` 是兼容基线，保留原有算法对旧日志使用的单价；它不声称这就是模型发布以来的完整真实价格历史。目前所有模型都只有这一档，因此现有估算数值不变。
+- 后续档的 `effective_from` 是生效瞬间，包含该瞬间，适用到下一档生效前。时间比较统一换算成 UTC；有偏移的时间按同一绝对时刻比较，无时区时间和仅日期值按 UTC 解释。选择费率不会改写事件原时间列，所以原有本地日期、小时和夏令时分桶保持不变。
+- Python 的 `calculate_model_event_costs(events, model)` 在缺少时间列、时间为空或无法解析时使用兼容基线，避免以后新增费率改变这些旧记录的估算。它不推测事件发生时间。按日期 / 小时聚合及费用 CLI 仍要求可用于分桶的有效时间戳；上述回退仅决定单价，不为缺失时间补日期。
+- `calculate_event_costs(events, price)` 仍是明确指定 `ModelPrice` 的固定单价接口，不要求时间列。`ModelPrice` 字段和 `OFFICIAL_PRICES` 的模型到单价字典结构保持不变；后者由历史表派生，表示最新记录的一档，不能用它直接重算需要区分历史日期的日志。
+
+以后只有在官方确认新单价及其生效时间后，才在对应模型的 tuple 末尾追加 `PricePeriod("带时区的 ISO 8601 生效时间", ModelPrice(...))`，保留基线和所有旧档。每档均保存自己的来源、`verified_on`、缓存和长上下文规则。`verified_on` / `PRICE_DATE` 是核实日期，不是价格生效日期；官方只给日期时，应在记录前确认所采用的生效时区。追加时同步本页并运行跨生效边界的合成测试。
+
+## 输出与兼容
+
+费用命令生成：
+
+- `api_cost_by_model.csv`：模型费用明细，保留原有金额与 token 字段。新增 `price_period_count` 表示实际使用的费率档数（未定价模型为 0）；单档时原有三个 `*_rate_per_million` 列记录该档的单价，跨多档时留空，避免把某一档误标为整段历史的统一单价。`official_source` 保留使用过的来源，多个来源以分号分隔；
 - `api_cost_scenarios.csv`：`codex-auto-review` 分别假设采用 GPT-5.6 Luna、Terra、Sol 和 GPT-6 Astra 单价时的情景；
 - `daily_api_cost.csv`：逐日及累计费用，包含各个公开定价模型的 `model_<模型名>_cost_usd` 和 `cumulative_model_<模型名>_cost_usd`；
-- `api_cost_estimate.json`：单价、来源、各模型单价核实日期、假设和完整结果；
+- `api_cost_estimate.json`：保留 `price_date`、`official_prices` 等原有字段，新增 `official_price_history`。每模型对应一个列表，每项包含 `effective_from`（基线为 JSON `null`）和完整 `price` 对象，用于核对跨费率估算；
 - `09_cumulative_api_cost.png`：按模型堆叠的累计费用面积图，使用不透明色块且不绘制边界折线，最上方为总额，图例列出各模型的累计估算费用；颜色与 08 图一致，堆叠从底部到顶部按各模型在统计日志中首次出现的时间排序，去掉 auto-review 等没有公开单价的模型及其费用情景。
 
 `codex-auto-review` 没有公开 API 单价，因此情景值不是官方报价。费用也不包含 Web Search、Computer Use、存储等工具费用。
@@ -39,7 +54,7 @@ python -m codex_usage cost
 
 `report` 生成的 `13_recent_hourly_api_cost.png` 是最近七个日历日的逐小时费用柱状图，按模型堆叠。它与 12 图使用相同的本地小时索引、日期范围、时区、模型配色和顺序，空闲小时补 0；每次请求先复用费用计算器的记录单价、缓存和长上下文规则计算美元估算，再按小时与模型求和。`unknown`、auto-review 等没有记录单价的模型不计入金额，也不采用费用情景补值；图片注明这些未计价请求及 token 用量。
 
-对应的 `recent_hourly_api_cost.csv` 保留带时区的 `hour_start`，导出 `official_models_cost_usd`、各模型的 `model_<模型名>_cost_usd`、`unpriced_requests` 和 `unpriced_tokens`。`summary.json` 的 `recent_hourly_api_cost` 记录币种、估算总额、未计价请求与用量，并附 `price_date`、`official_prices` 中的单价来源、各模型核实日期和适用规则；13 图同时列入其 `charts` 清单。GUI「更新图片」和演示流程会随 `report` 自动生成 13 图。
+对应的 `recent_hourly_api_cost.csv` 保留带时区的 `hour_start`，导出 `official_models_cost_usd`、各模型的 `model_<模型名>_cost_usd`、`unpriced_requests` 和 `unpriced_tokens`。`summary.json` 的 `recent_hourly_api_cost` 记录币种、估算总额、未计价请求与用量，并保留 `price_date`、`official_prices`，新增窗口内已计价模型的完整 `official_price_history`，记录各档生效时间、单价、来源、核实日期和适用规则；13 图同时列入其 `charts` 清单。GUI「更新图片」和演示流程会随 `report` 自动生成 13 图。
 
 如果输出在自定义目录，需同时指定输入和输出，例如：
 

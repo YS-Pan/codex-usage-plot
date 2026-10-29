@@ -55,51 +55,60 @@ class ModelPrice:
     verified_on: str = "2026-09-23"
 
 
-OFFICIAL_PRICES: dict[str, ModelPrice] = {
-    "gpt-6-astra": ModelPrice(
+@dataclass(frozen=True)
+class PricePeriod:
+    # None is the compatibility baseline, not a claimed historical start date.
+    effective_from: str | None
+    price: ModelPrice
+
+
+# Append confirmed changes here; never replace a model's baseline or old periods.
+# Verification dates describe evidence, not when a price became effective.
+OFFICIAL_PRICE_HISTORY: dict[str, tuple[PricePeriod, ...]] = {
+    "gpt-6-astra": (PricePeriod(None, ModelPrice(
         10.00,
         1.00,
         50.00,
         source="https://developers.openai.com/api/docs/models/gpt-6-astra",
-    ),
-    "gpt-6.1-sol": ModelPrice(
+    )),),
+    "gpt-6.1-sol": (PricePeriod(None, ModelPrice(
         2.00,
         0.10,
         10.00,
         source="https://developers.openai.com/api/docs/models/gpt-6.1-sol",
         verified_on=PRICE_DATE,
-    ),
-    "gpt-6-sol": ModelPrice(
+    )),),
+    "gpt-6-sol": (PricePeriod(None, ModelPrice(
         2.00,
         0.20,
         10.00,
         source="https://developers.openai.com/api/docs/models/gpt-6-sol",
-    ),
-    "gpt-6-luna": ModelPrice(
+    )),),
+    "gpt-6-luna": (PricePeriod(None, ModelPrice(
         0.10,
         0.01,
         0.50,
         source="https://developers.openai.com/api/docs/models/gpt-6-luna",
-    ),
-    "gpt-5.6-sol": ModelPrice(
+    )),),
+    "gpt-5.6-sol": (PricePeriod(None, ModelPrice(
         4.00,
         0.40,
         20.00,
         source="https://developers.openai.com/api/docs/models/gpt-5.6-sol",
-    ),
-    "gpt-5.6-terra": ModelPrice(
+    )),),
+    "gpt-5.6-terra": (PricePeriod(None, ModelPrice(
         2.00,
         0.20,
         12.00,
         source="https://developers.openai.com/api/docs/models/gpt-5.6-terra",
-    ),
-    "gpt-5.6-luna": ModelPrice(
+    )),),
+    "gpt-5.6-luna": (PricePeriod(None, ModelPrice(
         0.20,
         0.02,
         1.20,
         source="https://developers.openai.com/api/docs/models/gpt-5.6-luna",
-    ),
-    "gpt-5.5": ModelPrice(
+    )),),
+    "gpt-5.5": (PricePeriod(None, ModelPrice(
         5.00,
         0.50,
         30.00,
@@ -108,8 +117,72 @@ OFFICIAL_PRICES: dict[str, ModelPrice] = {
         # long-context multiplier is retained for future exports. GPT-5.5
         # has no additional cache-write charge, unlike GPT-5.6 and later.
         source="https://developers.openai.com/api/docs/models/gpt-5.5",
-    ),
+    )),),
 }
+
+# Preserve the existing public model -> latest recorded price mapping.
+OFFICIAL_PRICES: dict[str, ModelPrice] = {
+    model: periods[-1].price for model, periods in OFFICIAL_PRICE_HISTORY.items()
+}
+
+
+def official_price_history() -> dict[str, list[dict[str, Any]]]:
+    """JSON-ready provenance for the timeline used by all cost entry points."""
+    return {
+        model: [asdict(period) for period in periods]
+        for model, periods in OFFICIAL_PRICE_HISTORY.items()
+    }
+
+
+def _event_price_periods(
+    events: pd.DataFrame, model: str,
+) -> tuple[tuple[PricePeriod, ...], np.ndarray]:
+    periods = OFFICIAL_PRICE_HISTORY[model]
+    if not periods or periods[0].effective_from is not None:
+        raise ValueError(f"{model}: price history must start with a compatibility baseline")
+    selected = np.zeros(len(events), dtype=int)
+    if len(periods) == 1:
+        return periods, selected
+
+    timestamps = pd.to_datetime(
+        events.get("timestamp", pd.Series(pd.NaT, index=events.index)),
+        format="mixed", utc=True, errors="coerce",
+    )
+    previous = None
+    for index, period in enumerate(periods[1:], start=1):
+        start = pd.Timestamp(period.effective_from)
+        if pd.isna(start):
+            raise ValueError(f"{model}: dated price periods must have a valid start")
+        start = start.tz_localize("UTC") if start.tzinfo is None else start.tz_convert("UTC")
+        if previous is not None and start <= previous:
+            raise ValueError(f"{model}: price periods must be in strictly increasing order")
+        selected[(timestamps >= start).to_numpy()] = index
+        previous = start
+    return periods, selected
+
+
+def calculate_model_event_costs(events: pd.DataFrame, model: str) -> pd.DataFrame:
+    """Price each event at its UTC instant; unavailable times use the baseline.
+
+    Naive timestamps (including date-only strings) mean UTC. Comparison uses a
+    temporary parsed series so original timestamps, row order and indices remain
+    intact. The explicit-price calculate_event_costs interface remains available.
+    """
+    periods, selected = _event_price_periods(events, model)
+    result = calculate_event_costs(events, periods[0].price)
+    # Positional assignment also supports non-unique and non-monotonic indices.
+    for index in np.unique(selected):
+        if index == 0:
+            continue
+        positions = np.flatnonzero(selected == index)
+        calculated = calculate_event_costs(events.iloc[positions], periods[index].price)
+        for column in (
+            "long_context", "uncached_input_cost_usd", "cached_input_cost_usd",
+            "cache_write_cost_usd", "output_cost_usd", "total_cost_usd",
+        ):
+            result.iloc[positions, result.columns.get_loc(column)] = calculated[column].to_numpy()
+    return result
+
 
 REQUIRED_COLUMNS = {
     "timestamp",
@@ -178,14 +251,14 @@ def aggregate_thread_model_costs(events: pd.DataFrame) -> pd.DataFrame:
     selected["total_cost_usd"] = np.nan
     selected["priced_tokens"] = 0
     breakdown_tokens = selected["input_tokens"] + selected["output_tokens"]
-    for model, price in OFFICIAL_PRICES.items():
+    for model in OFFICIAL_PRICES:
         # A total-only snapshot has no input/output split to price.
         mask = (selected["model"] == model) & (
             (breakdown_tokens > 0) | (selected["total_tokens"] == 0)
         )
         if not mask.any():
             continue
-        calculated = calculate_event_costs(selected.loc[mask], price)
+        calculated = calculate_model_event_costs(selected.loc[mask], model)
         selected.loc[mask, "total_cost_usd"] = calculated["total_cost_usd"]
         selected.loc[mask, "priced_tokens"] = np.minimum(
             selected.loc[mask, "total_tokens"], breakdown_tokens.loc[mask],
@@ -204,11 +277,14 @@ def aggregate_thread_model_costs(events: pd.DataFrame) -> pd.DataFrame:
 def summarize_official_models(events: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     rows: list[dict[str, Any]] = []
     priced_events: list[pd.DataFrame] = []
-    for model, price in OFFICIAL_PRICES.items():
+    for model in OFFICIAL_PRICES:
         subset = events.loc[events["model"] == model].copy()
         if subset.empty:
             continue
-        calculated = calculate_event_costs(subset, price)
+        calculated = calculate_model_event_costs(subset, model)
+        periods, selected = _event_price_periods(subset, model)
+        used_prices = [periods[index].price for index in np.unique(selected)]
+        price = used_prices[0] if len(used_prices) == 1 else None
         priced_events.append(calculated)
         rows.append(
             {
@@ -224,9 +300,10 @@ def summarize_official_models(events: pd.DataFrame) -> tuple[pd.DataFrame, pd.Da
                 "output_tokens": int(calculated["output_tokens"].sum()),
                 "total_tokens": int(calculated["total_tokens"].sum()),
                 "long_context_requests": int(calculated["long_context"].sum()),
-                "input_rate_per_million": price.input_per_million,
-                "cached_input_rate_per_million": price.cached_input_per_million,
-                "output_rate_per_million": price.output_per_million,
+                "input_rate_per_million": price.input_per_million if price else None,
+                "cached_input_rate_per_million": price.cached_input_per_million if price else None,
+                "output_rate_per_million": price.output_per_million if price else None,
+                "price_period_count": len(used_prices),
                 "uncached_input_cost_usd": calculated[
                     "uncached_input_cost_usd"
                 ].sum(),
@@ -234,7 +311,7 @@ def summarize_official_models(events: pd.DataFrame) -> tuple[pd.DataFrame, pd.Da
                 "cache_write_cost_usd": calculated["cache_write_cost_usd"].sum(),
                 "output_cost_usd": calculated["output_cost_usd"].sum(),
                 "total_cost_usd": calculated["total_cost_usd"].sum(),
-                "official_source": price.source,
+                "official_source": "; ".join(dict.fromkeys(item.source for item in used_prices)),
             }
         )
 
@@ -262,6 +339,7 @@ def summarize_official_models(events: pd.DataFrame) -> tuple[pd.DataFrame, pd.Da
                 "input_rate_per_million": None,
                 "cached_input_rate_per_million": None,
                 "output_rate_per_million": None,
+                "price_period_count": 0,
                 "uncached_input_cost_usd": None,
                 "cached_input_cost_usd": None,
                 "cache_write_cost_usd": None,
@@ -285,8 +363,7 @@ def auto_review_scenarios(
     rows: list[dict[str, Any]] = []
     calculated_events: dict[str, pd.DataFrame] = {}
     for assumed_model in ("gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-6-astra"):
-        price = OFFICIAL_PRICES[assumed_model]
-        calculated = calculate_event_costs(auto_events, price)
+        calculated = calculate_model_event_costs(auto_events, assumed_model)
         scenario_name = f"auto_review_as_{assumed_model}"
         calculated_events[scenario_name] = calculated
         auto_cost = float(calculated["total_cost_usd"].sum())
@@ -382,11 +459,11 @@ def aggregate_recent_hourly_cost(events: pd.DataFrame, hours: pd.DatetimeIndex) 
     hourly = pd.DataFrame(index=hours)
     hourly.index.name = "hour_start"
     hourly["official_models_cost_usd"] = 0.0
-    for model, price in OFFICIAL_PRICES.items():
+    for model in OFFICIAL_PRICES:
         subset = selected.loc[selected["model"] == model]
         if subset.empty:
             continue
-        calculated = calculate_event_costs(subset, price)
+        calculated = calculate_model_event_costs(subset, model)
         values = (
             calculated.set_index("timestamp")["total_cost_usd"]
             .resample("h", origin=hours[0]).sum().reindex(hours, fill_value=0.0)
@@ -547,7 +624,9 @@ def main(argv: list[str] | None = None) -> int:
         "official_prices": {
             model: asdict(price) for model, price in OFFICIAL_PRICES.items()
         },
+        "official_price_history": official_price_history(),
         "assumptions": [
+            "Prices are selected by each event's UTC instant; missing or invalid timestamps use the compatibility baseline, and naive timestamps mean UTC.",
             "Cached input is a subset of input_tokens and is not double-counted.",
             "Reasoning output is a subset of output_tokens and is not double-counted.",
             "Requests over 272K input tokens use 2x input and 1.5x output rates.",

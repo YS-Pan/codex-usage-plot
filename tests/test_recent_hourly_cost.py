@@ -239,6 +239,10 @@ class RecentHourlyCostTests(unittest.TestCase):
                     price = estimate["official_prices"]["gpt-6.1-sol"]
                     self.assertEqual(price["source"], OFFICIAL_PRICES["gpt-6.1-sol"].source)
                     self.assertEqual(price["verified_on"], OFFICIAL_PRICES["gpt-6.1-sol"].verified_on)
+                    history = estimate["official_price_history"]["gpt-6.1-sol"]
+                    self.assertEqual(len(history), 1)
+                    self.assertIsNone(history[0]["effective_from"])
+                    self.assertEqual(history[0]["price"], price)
                     self.assertIn("<svg", (output / "13_recent_hourly_api_cost.svg").read_text(encoding="utf-8"))
 
 

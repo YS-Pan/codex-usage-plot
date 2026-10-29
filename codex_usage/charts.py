@@ -1878,7 +1878,10 @@ def export_report(
     models = aggregate_models(events)
     recent_hourly = aggregate_recent_hourly(events, target_tz, end)
     # Import here because the cost module also reuses the chart styling helpers.
-    from .cost import OFFICIAL_PRICES, PRICE_DATE, aggregate_recent_hourly_cost, plot_recent_hourly_cost
+    from .cost import (
+        OFFICIAL_PRICES, PRICE_DATE, aggregate_recent_hourly_cost,
+        official_price_history, plot_recent_hourly_cost,
+    )
 
     recent_hourly_cost = aggregate_recent_hourly_cost(events, pd.DatetimeIndex(recent_hourly["hour_start"]))
 
@@ -1985,6 +1988,10 @@ def export_report(
             "price_date": PRICE_DATE,
             "official_prices": {
                 model: asdict(price) for model, price in OFFICIAL_PRICES.items()
+                if f"model_{model}_cost_usd" in recent_hourly_cost.columns
+            },
+            "official_price_history": {
+                model: periods for model, periods in official_price_history().items()
                 if f"model_{model}_cost_usd" in recent_hourly_cost.columns
             },
             "assumptions": [
