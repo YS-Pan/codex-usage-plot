@@ -53,6 +53,7 @@ from .running_time import (
     running_intervals_frame,
 )
 from .thread_metadata import directory_name, enrich_thread_metadata
+from .progress import ProgressReporter, report_progress
 
 if TYPE_CHECKING:
     from .animations import AnimationOptions
@@ -647,6 +648,7 @@ def collect_cached_usage_data(
     started = perf_counter()
     codex_home = codex_home.expanduser().resolve()
     cache_path = cache_path.expanduser().resolve()
+    report_progress("discover", "正在查找日志…", enabled=progress)
     files = discover_rollouts(codex_home, include_archived)
     paths = {relative_log_path(path, codex_home): path for path in files}
     active = set(paths)
@@ -656,6 +658,8 @@ def collect_cached_usage_data(
         raise ValueError("缓存文件不能覆盖 Codex 原始日志")
     scan = ScanStats(mode="incremental" if incremental else "full")
     stats = ParseStats(files_seen=len(files), scan=scan)
+    reporter = ProgressReporter("scan", "正在检查日志", total=len(files), unit="个文件", enabled=progress)
+    reporter.update(0)
     titles = load_session_titles(codex_home)
     with UsageCache(cache_path, codex_home) as cache:
         if not incremental:
@@ -723,10 +727,10 @@ def collect_cached_usage_data(
                 cache.save_events(log, new_events)
                 cache.save_intervals(log, tracker.intervals)
                 entries[log] = entry
-            if progress and (index % 50 == 0 or index == len(files)):
-                eprint(f"Checked {index}/{len(files)} files; reused {scan.files_reused}; "
-                       f"new {scan.files_new}, appended {scan.files_appended}, rebuilt {scan.files_rebuilt}")
+            reporter.update(index, f"缓存复用 {scan.files_reused}，新增 {scan.files_new}，"
+                            f"续读 {scan.files_appended}，重读 {scan.files_rebuilt}")
 
+        report_progress("organize", "正在整理用量与运行时间…", enabled=progress)
         scanned_roots = {"sessions", "archived_sessions"} if include_archived else {"sessions"}
         for log in list(entries):
             if log not in active and Path(log).parts[0] in scanned_roots:
@@ -808,8 +812,11 @@ def collect_usage_data(
             return collect_cached_usage_data(
                 codex_home, target_tz, include_archived, progress, cache_path, incremental
             )
+    report_progress("discover", "正在查找日志…", enabled=progress)
     files = discover_rollouts(codex_home, include_archived)
     stats = ParseStats(files_seen=len(files))
+    reporter = ProgressReporter("scan", "正在检查日志", total=len(files), unit="个文件", enabled=progress)
+    reporter.update(0)
     titles = load_session_titles(codex_home)
     records: list[dict[str, Any]] = []
     fingerprints: set[tuple[object, ...]] = set()
@@ -834,12 +841,9 @@ def collect_usage_data(
             session_metadata[session_id] = meta
         tracker.finish_open_turn()
         running_intervals.extend(tracker.intervals)
-        if progress and (index % 50 == 0 or index == len(files)):
-            eprint(
-                f"Parsed {index}/{len(files)} files; "
-                f"kept {len(records):,} token events"
-            )
+        reporter.update(index, f"保留 {len(records):,} 条用量事件，读取失败 {stats.files_failed} 个文件")
 
+    report_progress("organize", "正在整理用量与运行时间…", enabled=progress)
     frame = frame_from_records(records, parent_threads, titles, target_tz)
     frame = enrich_thread_metadata(frame, codex_home, session_metadata)
     return frame, deduplicate_running_intervals(running_intervals, stats.runtime), stats
@@ -1860,8 +1864,10 @@ def export_report(
     start: date,
     end: date,
     animation: AnimationOptions | None = None,
+    progress: bool = True,
 ) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
+    report_progress("aggregate", "正在汇总图片数据…", enabled=progress)
     observed_at = datetime.now(timezone.utc)
     lower = local_midnight(start, target_tz).astimezone(timezone.utc)
     upper = local_midnight(end + timedelta(days=1), target_tz).astimezone(timezone.utc)
@@ -1882,6 +1888,7 @@ def export_report(
 
     recent_hourly_cost = aggregate_recent_hourly_cost(events, pd.DatetimeIndex(recent_hourly["hour_start"]))
 
+    report_progress("data", "正在保存用量数据文件…", enabled=progress)
     dataframe_for_csv(events).to_csv(output_dir / "events.csv", index=False, encoding="utf-8-sig")
     dataframe_for_csv(daily).to_csv(
         output_dir / "daily_usage.csv", index=False, encoding="utf-8-sig"
@@ -1909,44 +1916,48 @@ def export_report(
     )
 
     configure_matplotlib()
-    chart_paths = [] if events.empty else [
-        plot_daily_usage(daily, events, output_dir, image_format, dpi),
-        plot_cumulative_usage(daily, events, output_dir, image_format, dpi),
-        plot_daily_composition(daily, output_dir, image_format, dpi),
-        plot_weekly_breakdown(
+    arguments = (output_dir, image_format, dpi)
+    chart_jobs = [] if events.empty else [
+        (1, plot_daily_usage, (daily, events, *arguments)),
+        (2, plot_cumulative_usage, (daily, events, *arguments)),
+        (3, plot_daily_composition, (daily, *arguments)),
+        (4, plot_weekly_breakdown, (
             events,
             "source",
             "Weekly token usage by source",
             "04_weekly_by_source",
-            output_dir,
-            image_format,
-            dpi,
-        ),
-        plot_activity_heatmap(events, output_dir, image_format, dpi),
-        plot_top_threads(threads, events, top_threads, output_dir, image_format, dpi),
-        plot_request_sizes_over_time(events, output_dir, image_format, dpi),
-        plot_weekly_breakdown(
+            *arguments,
+        )),
+        (5, plot_activity_heatmap, (events, *arguments)),
+        (6, plot_top_threads, (threads, events, top_threads, *arguments)),
+        (7, plot_request_sizes_over_time, (events, *arguments)),
+        (8, plot_weekly_breakdown, (
             events,
             "model",
             "Weekly token usage by model",
             "08_weekly_by_model",
-            output_dir,
-            image_format,
-            dpi,
-        ),
+            *arguments,
+        )),
     ]
-    chart_paths.append(
-        plot_daily_running_time(running_daily, output_dir, target_tz, image_format, dpi)
-    )
-    chart_paths.append(plot_daily_cache_miss_rate(daily, output_dir, image_format, dpi))
-    chart_paths.append(plot_recent_hourly_usage(recent_hourly, events, output_dir, image_format, dpi))
-    chart_paths.append(plot_recent_hourly_cost(recent_hourly_cost, events, output_dir, image_format, dpi))
+    chart_jobs.extend([
+        (10, plot_daily_running_time, (running_daily, output_dir, target_tz, image_format, dpi)),
+        (11, plot_daily_cache_miss_rate, (daily, *arguments)),
+        (12, plot_recent_hourly_usage, (recent_hourly, events, *arguments)),
+        (13, plot_recent_hourly_cost, (recent_hourly_cost, events, *arguments)),
+    ])
+    reporter = ProgressReporter("charts", "正在生成用量图片", total=len(chart_jobs), unit="张", enabled=progress)
+    chart_paths = []
+    for index, (number, plot, plot_arguments) in enumerate(chart_jobs):
+        reporter.update(index, f"正在生成图片 {number:02d}", force=True)
+        chart_paths.append(plot(*plot_arguments))
+        reporter.update(index + 1, f"已保存图片 {number:02d}", force=True)
 
     from .animations import AnimationOptions, export_animations
 
     animation_results = export_animations(
         events, selected_intervals, output_dir, target_tz, start,
         animation or AnimationOptions(), top_threads=top_threads, observed_at=observed_at,
+        progress=progress,
     )
 
     total_input = int(events["input_tokens"].sum())
@@ -2020,6 +2031,7 @@ def export_report(
         "charts": [path.name for path in chart_paths],
         "animations": animation_results,
     }
+    report_progress("summary", "正在保存用量汇总…", enabled=progress)
     with (output_dir / "summary.json").open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, ensure_ascii=False, indent=2)
         handle.write("\n")
@@ -2065,7 +2077,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--top-threads", type=int, default=15, help="任务排行数量，默认 15。"
     )
     parser.add_argument(
-        "--quiet", action="store_true", help="不显示日志扫描进度。"
+        "--quiet", action="store_true", help="不显示扫描、图片及动画生成进度。"
     )
     parser.add_argument(
         "--incremental", action="store_true",
@@ -2159,6 +2171,7 @@ def main(argv: list[str] | None = None) -> int:
             start=report_start,
             end=report_end,
             animation=animation,
+            progress=not args.quiet,
         )
     except (OSError, RuntimeError) as exc:
         eprint(f"错误：图片或动画生成失败：{exc}")
