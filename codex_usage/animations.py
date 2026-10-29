@@ -33,6 +33,7 @@ CHART_NAMES = {
     7: "07_request_sizes_over_time", 8: "08_weekly_by_model", 9: "09_cumulative_api_cost",
     10: "10_daily_running_time", 11: "11_daily_cache_miss_rate",
     12: "12_recent_hourly_tokens", 13: "13_recent_hourly_api_cost",
+    14: "14_daily_api_cost_composition",
 }
 END_HOLD_SECONDS = 1
 
@@ -54,7 +55,7 @@ def animation_dates(
     if options.fps <= 0 or options.dpi <= 0:
         raise ValueError("动画帧率和 DPI 必须大于 0。")
     if any(number not in CHART_NAMES for number in options.charts):
-        raise ValueError("动画图片编号必须在 01–13 之间。")
+        raise ValueError("动画图片编号必须在 01–14 之间。")
     today = (observed_at or datetime.now(timezone.utc)).astimezone(target_tz).date()
     end = min(options.end or today, today)
     start = options.start or end - timedelta(days=30)
@@ -270,6 +271,9 @@ class FrameRenderer:
                 else:
                     costs = cost.aggregate_recent_hourly_cost(events, pd.DatetimeIndex(hourly["hour_start"]))
                     cost.plot_recent_hourly_cost(costs, events, *arguments, model_colors=self.model_colors)
+            elif number == 14:
+                costs = cost.aggregate_daily_cost_composition(events, dates)
+                cost.plot_daily_cost_composition(costs, *arguments, component_colors=self.component_colors)
         if image is None:
             raise RuntimeError(f"图片 {number:02d} 未生成动画帧。")
         return image
@@ -363,7 +367,7 @@ def read_report(directory: Path) -> tuple[pd.DataFrame, list[RunningInterval], d
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m codex_usage animate", description="从已有数据文件按编号生成 MP4 动画，可同时导出 GIF，不重新扫描日志或更新静态图片。")
-    parser.add_argument("--chart", type=int, nargs="+", choices=range(1, 14), required=True, metavar="NUMBER", help="图片编号，例如 --chart 6 或 --chart 2 8。")
+    parser.add_argument("--chart", type=int, nargs="+", choices=range(1, 15), required=True, metavar="NUMBER", help="图片编号，例如 --chart 6 或 --chart 2 8。")
     parser.add_argument("--output", type=Path, default=Path("codex_usage_report"), help="已有 summary.json、events.csv 所在的结果目录，也是动画输出目录。")
     parser.add_argument("--start", help="第一帧本地日期，YYYY-MM-DD；默认结束日期的 30 天前。")
     parser.add_argument("--end", help="最后一帧本地日期，YYYY-MM-DD；默认今天。")

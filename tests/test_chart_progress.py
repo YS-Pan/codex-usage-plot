@@ -103,12 +103,13 @@ class ChartProgressTests(unittest.TestCase):
         for name in names:
             stack.enter_context(patch.object(charts, name, return_value=self.output / f"{name}.png"))
         stack.enter_context(patch.object(cost, "plot_recent_hourly_cost", return_value=self.output / "13.png"))
+        stack.enter_context(patch.object(cost, "plot_daily_cost_composition", return_value=self.output / "14.png"))
         stack.enter_context(patch.object(charts, "configure_matplotlib"))
         return stack.enter_context(patch.object(animations, "export_animations", return_value=[]))
 
     def test_picture_total_matches_data_and_advances_only_after_save(self):
         events, intervals, stats = charts.collect_usage_data(self.home, self.zone, progress=False)
-        for empty, total in ((False, 12), (True, 4)):
+        for empty, total in ((False, 13), (True, 5)):
             with self.subTest(empty=empty), ExitStack() as stack, redirect_stderr(io.StringIO()) as output:
                 export_animations = self.mock_plots(stack)
                 summary = charts.export_report(

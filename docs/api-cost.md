@@ -4,7 +4,7 @@
 
 以下保留项目已有的单价来源、核实日期和假设。价格记录不保证持续有效；此计算仅用于假设性比较，不代表订阅账单或实际应付费用。
 
-`report` 在生成用量图片与数据文件时，同时在 06 任务排行中标注费用，并生成 13 图的逐小时费用估算。需要累计费用图片与完整费用明细时，再运行：
+`report` 在生成用量图片与数据文件时，同时在 06 任务排行中标注费用，并生成 13 图的逐小时费用估算和 14 图的每日费用构成。需要累计费用图片与完整费用明细时，再运行：
 
 ```powershell
 python -m codex_usage cost
@@ -28,7 +28,7 @@ python -m codex_usage cost
 
 ## 按事件时间选择费率
 
-费用计算先按每个事件的 `timestamp` 选择该模型的费率，再应用该档的缓存写入、长上下文阈值和倍率，最后按任务、模型、日期或小时汇总。06 任务排行、09 累计费用、13 逐小时费用及相应动画均使用同一选择规则；auto-review 情景按事件时间选择假设模型的费率，仍不代表 auto-review 的官方价格。
+费用计算先按每个事件的 `timestamp` 选择该模型的费率，再应用该档的缓存写入、长上下文阈值和倍率，最后按任务、模型、日期或小时汇总。06 任务排行、09 累计费用、13 逐小时费用、14 每日费用构成及相应动画均使用同一选择规则；auto-review 情景按事件时间选择假设模型的费率，仍不代表 auto-review 的官方价格。
 
 - `codex_usage/model_prices.py` 的 `OFFICIAL_PRICE_HISTORY` 保存每个模型按时间升序排列的 `PricePeriod`。首项 `effective_from=None` 是兼容基线，保留原有算法对旧日志使用的单价；它不声称这就是模型发布以来的完整真实价格历史。目前所有模型都只有这一档；旧模型保留原有费率，新加入 GPT-6.1 Terra 的历史记录采用已核实价格作为兼容基线，并不声称已知其生效时间。
 - 后续档的 `effective_from` 是生效瞬间，包含该瞬间，适用到下一档生效前。时间比较统一换算成 UTC；有偏移的时间按同一绝对时刻比较，无时区时间和仅日期值按 UTC 解释。选择费率不会改写事件原时间列，所以原有本地日期、小时和夏令时分桶保持不变。
@@ -57,10 +57,20 @@ python -m codex_usage cost
 
 对应的 `recent_hourly_api_cost.csv` 保留带时区的 `hour_start`，导出 `official_models_cost_usd`、各模型的 `model_<模型名>_cost_usd`、`unpriced_requests` 和 `unpriced_tokens`。`summary.json` 的 `recent_hourly_api_cost` 记录币种、估算总额、未计价请求与用量，并保留 `price_date`、`official_prices`，新增窗口内已计价模型的完整 `official_price_history`，记录各档生效时间、单价、来源、核实日期和适用规则；13 图同时列入其 `charts` 清单。GUI「更新图片」和演示流程会随 `report` 自动生成 13 图。
 
+## 每日费用构成
+
+`report` 生成的 `14_daily_api_cost_composition.png` 按本地日历日展示未缓存输入、缓存输入、缓存写入、可见输出和推理输出的美元费用估算，分类与配色沿用 03 图。图片采用每日堆叠柱状图，每根柱子代表一天；纵轴从 0 开始，使用线性美元坐标。每层代表当天该类 token 的费用，整根柱子的高度为当天可计价费用总额，金额不累计到下一天，空闲日期补 0。
+
+每条用量事件先按模型和事件时间应用记录费率、缓存写入与长上下文规则，再汇总到所选时区的日期。缓存输入和缓存写入从输入中拆出；输出费用按该事件的推理输出占比拆为推理输出与可见输出，两部分共用输出费率，并包含相同的长上下文倍率。推理计数限定在 0 到该事件输出 token 数之间，零输出不产生拆分费用。五类费用相加等于原费用计算器的可计价总额。
+
+`unknown`、auto-review 等没有记录单价的模型，以及只有总 token、没有输入 / 输出明细的记录，不计入金额，不按情景假设补值；无法分类的 token 保留为未计价用量。`daily_api_cost_composition.csv` 的 `date` 保留时区，`official_models_cost_usd` 为每日可计价费用总额，`unpriced_requests` 和 `unpriced_tokens` 保留未计价事件数与用量。`summary.json` 的 `daily_api_cost_composition` 保存估算总额、币种、未计价统计和费率来源，`components_usd` 保存各分类的时段费用之和；14 图列入 `charts`。GUI「更新图片」和演示流程自动生成，14 动画按需选择。
+
+## 自定义目录与格式
+
 如果输出在自定义目录，需同时指定输入和输出，例如：
 
 ```sh
 python -m codex_usage cost --events report/events.csv --output report
 ```
 
-本页命令需使用已安装项目依赖的 Python；Windows 默认虚拟环境为 `.venv/Scripts/python.exe`，macOS / Linux 为 `.venv/bin/python`。09 图固定为 PNG；13 图随 `report --format` 支持 PNG / SVG / PDF。
+本页命令需使用已安装项目依赖的 Python；Windows 默认虚拟环境为 `.venv/Scripts/python.exe`，macOS / Linux 为 `.venv/bin/python`。09 图固定为 PNG；13、14 图随 `report --format` 支持 PNG / SVG / PDF。

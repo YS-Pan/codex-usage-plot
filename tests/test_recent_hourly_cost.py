@@ -244,6 +244,24 @@ class RecentHourlyCostTests(unittest.TestCase):
                     self.assertIsNone(history[0]["effective_from"])
                     self.assertEqual(history[0]["price"], price)
                     self.assertIn("<svg", (output / "13_recent_hourly_api_cost.svg").read_text(encoding="utf-8"))
+                    daily_path = output / "daily_api_cost_composition.csv"
+                    self.assertTrue(daily_path.read_bytes().startswith(b"\xef\xbb\xbf"))
+                    daily = pd.read_csv(daily_path)
+                    usage_daily = pd.read_csv(output / "daily_usage.csv")
+                    self.assertEqual(daily["date"].tolist(), usage_daily["date"].tolist())
+                    self.assertEqual(daily.iloc[0]["date"], "2026-10-01T00:00:00+08:00")
+                    self.assertEqual(daily.iloc[-1]["date"], f"{last_date}T00:00:00+08:00")
+                    self.assertAlmostEqual(daily["official_models_cost_usd"].sum(), 0.2)
+                    self.assertIn("14_daily_api_cost_composition.svg", summary["charts"])
+                    daily_estimate = summary["daily_api_cost_composition"]
+                    self.assertEqual(daily_estimate["currency"], "USD")
+                    self.assertAlmostEqual(daily_estimate["total_cost_usd"], 0.2)
+                    self.assertAlmostEqual(sum(daily_estimate["components_usd"].values()), 0.2)
+                    self.assertEqual(daily_estimate["unpriced_requests"], 1)
+                    self.assertEqual(daily_estimate["unpriced_tokens"], 99)
+                    self.assertEqual(daily_estimate["official_prices"]["gpt-6.1-sol"], price)
+                    self.assertEqual(daily_estimate["official_price_history"]["gpt-6.1-sol"], history)
+                    self.assertIn("<svg", (output / "14_daily_api_cost_composition.svg").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

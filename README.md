@@ -1,6 +1,6 @@
 # Codex 本地用量统计
 
-从本机 Codex 日志生成用量图片：token、运行时间、缓存未命中率、模型分布和 API 费用估算。
+从本机 Codex 日志生成用量图片：token、运行时间、缓存未命中率、模型分布和 API 费用估算，包含按 token 类型拆分的每日费用。
 
 ![累计 token 用量动画](codex_usage_report/02_cumulative_tokens.gif)
 

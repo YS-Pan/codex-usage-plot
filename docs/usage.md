@@ -57,7 +57,7 @@ python -m codex_usage cost --events report/events.csv --output report
 | `--timezone NAME` | IANA 时区，CLI 默认 `local` |
 | `--start / --end` | `YYYY-MM-DD` 日期范围，默认全部 |
 | `--no-include-archived` | 不读取归档，默认包含 |
-| `--format png\|svg\|pdf` | 用量图格式，默认 PNG；费用图始终为 PNG |
+| `--format png\|svg\|pdf` | `report` 图片格式，默认 PNG，包括 13、14 费用图片；`cost` 输出的 09 图固定为 PNG |
 | `--dpi NUMBER` | 图片 DPI，默认 160 |
 | `--top-threads NUMBER` | 任务排行数量，默认 15 |
 | `--incremental` | 增量扫描，缓存缺失时自动完整读取 |
@@ -75,7 +75,7 @@ python -m codex_usage cost --events report/events.csv --output report
 
 GUI「更新图片」和 CLI `report` 默认额外生成 `02_cumulative_tokens.mp4`，其余动画默认不生成。默认第一帧为 30 天前、最后一帧为今天，共 31 个日期快照；每天推进一帧，4 帧/秒，末尾再保持最后画面一秒，总长约 8.75 秒。静态图片继续正常生成，MP4 与图片放在同一结果目录。
 
-其他动画通常交给 AI agent 按需生成，例如：“请从现有结果生成图 6 最近 30 天的 MP4 动画。”支持 01–13 全部编号，可以使用已有数据文件，无需再次扫描日志或更新静态图片：
+其他动画通常交给 AI agent 按需生成，例如：“请从现有结果生成图 6 最近 30 天的 MP4 动画。”支持 01–14 全部编号，可以使用已有数据文件，无需再次扫描日志或更新静态图片：
 
 ```sh
 python -m codex_usage animate --chart 6

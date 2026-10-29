@@ -19,6 +19,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, time, timedelta, timezone, tzinfo
+from functools import partial
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable, Iterator, TYPE_CHECKING
@@ -1976,11 +1977,16 @@ def export_report(
     recent_hourly = aggregate_recent_hourly(events, target_tz, end)
     # Import here because the cost module also reuses the chart styling helpers.
     from .cost import (
-        OFFICIAL_PRICES, PRICE_DATE, aggregate_recent_hourly_cost,
-        official_price_history, plot_recent_hourly_cost,
+        COST_COMPOSITION_COLUMNS, OFFICIAL_PRICES, PRICE_DATE,
+        aggregate_daily_cost_composition, aggregate_recent_hourly_cost,
+        official_price_history, plot_daily_cost_composition, plot_recent_hourly_cost,
     )
 
     recent_hourly_cost = aggregate_recent_hourly_cost(events, pd.DatetimeIndex(recent_hourly["hour_start"]))
+    daily_cost_composition = aggregate_daily_cost_composition(events, pd.DatetimeIndex(daily["date"]))
+    component_colors = breakdown_color_map(
+        column for column in COMPOSITION_COLUMNS if daily[column].sum() > 0
+    )
 
     report_progress("data", "正在保存用量数据文件…", enabled=progress)
     dataframe_for_csv(events).to_csv(output_dir / "events.csv", index=False, encoding="utf-8-sig")
@@ -2007,6 +2013,9 @@ def export_report(
     )
     dataframe_for_csv(recent_hourly_cost).to_csv(
         output_dir / "recent_hourly_api_cost.csv", index=False, encoding="utf-8-sig"
+    )
+    dataframe_for_csv(daily_cost_composition).to_csv(
+        output_dir / "daily_api_cost_composition.csv", index=False, encoding="utf-8-sig"
     )
 
     configure_matplotlib()
@@ -2038,6 +2047,8 @@ def export_report(
         (11, plot_daily_cache_miss_rate, (daily, *arguments)),
         (12, plot_recent_hourly_usage, (recent_hourly, events, *arguments)),
         (13, plot_recent_hourly_cost, (recent_hourly_cost, events, *arguments)),
+        (14, partial(plot_daily_cost_composition, component_colors=component_colors),
+         (daily_cost_composition, *arguments)),
     ])
     reporter = ProgressReporter("charts", "正在生成用量图片", total=len(chart_jobs), unit="张", enabled=progress)
     chart_paths = []
@@ -2082,6 +2093,30 @@ def export_report(
             if not events.empty else None
         ),
         "peak_day_tokens": int(daily["total_tokens"].max()),
+        "daily_api_cost_composition": {
+            "currency": "USD",
+            "total_cost_usd": float(daily_cost_composition["official_models_cost_usd"].sum()),
+            "components_usd": {
+                column: float(daily_cost_composition[column].sum())
+                for column in COST_COMPOSITION_COLUMNS
+            },
+            "unpriced_requests": int(daily_cost_composition["unpriced_requests"].sum()),
+            "unpriced_tokens": int(daily_cost_composition["unpriced_tokens"].sum()),
+            "price_date": PRICE_DATE,
+            "official_prices": {
+                model: asdict(price) for model, price in OFFICIAL_PRICES.items()
+                if model in events["model"].values
+            },
+            "official_price_history": {
+                model: periods for model, periods in official_price_history().items()
+                if model in events["model"].values
+            },
+            "assumptions": [
+                "Daily sums of per-event estimates using recorded API rates and long-context rules; not an actual bill.",
+                "Reasoning and visible output split the existing output charge at the same per-event rate.",
+                "Models without recorded prices, unclassified tokens and tool-call charges are excluded.",
+            ],
+        },
         "recent_hourly_api_cost": {
             "currency": "USD",
             "total_cost_usd": float(recent_hourly_cost["official_models_cost_usd"].sum()),
@@ -2188,7 +2223,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     animation_group = parser.add_mutually_exclusive_group()
     animation_group.add_argument(
-        "--animations", type=int, nargs="+", choices=range(1, 14), default=[2],
+        "--animations", type=int, nargs="+", choices=range(1, 15), default=[2],
         metavar="NUMBER", help="生成指定编号的 MP4 动画，默认仅 02；例如 --animations 2 6。",
     )
     animation_group.add_argument("--no-animations", action="store_true", help="本次不生成动画。")
@@ -2295,7 +2330,7 @@ def main(argv: list[str] | None = None) -> int:
         f"{runtime['latest_day_summed_running_hours']:.2f} summed session hours, "
         f"{runtime['latest_day_running_percent']:.2f}%{partial}"
     )
-    print(f"Generated {len(summary['charts'])} charts and 9 CSV tables")
+    print(f"Generated {len(summary['charts'])} charts and 10 CSV tables")
     print(f"Generated {len(summary['animations'])} MP4 animations")
     return 0
 

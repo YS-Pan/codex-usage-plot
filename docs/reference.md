@@ -2,7 +2,7 @@
 
 [返回首页](../README.md) · [使用指南](usage.md) · [统计与数据约定](../dev_doc/statistics.md)
 
-GUI 会顺序生成用量与费用图片，并导出数据文件。CLI 需分别运行两个脚本。以下图片默认使用 PNG；`report` 可通过 `--format` 切换 SVG / PDF，包括 13 图；费用脚本单独生成的 09 图固定为 PNG。
+GUI 会顺序生成用量与费用图片，并导出数据文件。CLI 需分别运行两个脚本。以下图片默认使用 PNG；`report` 可通过 `--format` 切换 SVG / PDF，包括 13、14 图；费用脚本单独生成的 09 图固定为 PNG。
 
 本页记录 `report` / `cost` 的输出。纯数据 `query` 的 JSON 协议和 CSV 数据文件见 [供其他项目调用](integration.md#输出与退出码)。
 
@@ -22,16 +22,20 @@ GUI 会顺序生成用量与费用图片，并导出数据文件。CLI 需分别
 - `11_daily_cache_miss_rate.png`：每日缓存未命中率、最近 7 日按输入 token 加权的未命中率，以及所选时段的整体未命中率；纵轴按实际范围缩放；
 - `12_recent_hourly_tokens.png`：最近七个日历日按模型堆叠的逐小时 token 柱状图，以统计结束日期（指定 `--end` 时使用该日期，否则使用本地日志的最后活动日期）为最后一天；按指定时区和 token 事件时间归入各小时，空闲小时补 0；仅使用所选日期范围内的事件，图中标明日期和时区；
 - `13_recent_hourly_api_cost.png`：与 12 图使用相同小时窗口的逐小时 API 费用估算，按模型堆叠，单位为美元；逐请求应用记录单价和长上下文规则后再按小时求和，未记录单价的 `unknown`、auto-review 等模型不计入金额，图片注明未计价请求及用量；
+- `14_daily_api_cost_composition.png`：按未缓存输入、缓存输入、缓存写入、可见输出和推理输出拆分的每日 API 费用估算；分类与配色沿用 03 图，使用每日堆叠柱状图，每根柱子代表一天，横轴为本地日期，纵轴为线性美元坐标，各层之和为当天可计价费用，空闲日补 0；未计价用量不按情景假设补值；
 - `events.csv`：逐次 token 事件，`session_id` 保留实际会话 ID，`parent_thread_id` 记录直接父会话，`thread_id` 与 `title` 统一归属到最上层主对话；`project_name`、`thread_started_at` 保存主对话的项目名和带时区的开始时间；
 - `daily_usage.csv`、`weekly_usage.csv`：按日和按周汇总；每日表同时包含运行时间占比和缓存未命中率；
 - `recent_hourly_usage.csv`：与 12 图对应的逐小时 token、请求数和任务数，`hour_start` 保留时区；上海时区共 168 行，夏令时切换时按实际小时数保留或跳过对应小时；
 - `recent_hourly_api_cost.csv`：与 13 图对应的逐小时费用，包含保留时区的 `hour_start`、`official_models_cost_usd`、各模型的 `model_<模型名>_cost_usd`，以及未计价的 `unpriced_requests` 和 `unpriced_tokens`；
+- `daily_api_cost_composition.csv`：与 14 图对应的每日费用，`date` 保留时区，包含 `uncached_input_cost_usd`、`cached_input_cost_usd`、`cache_write_cost_usd`、`visible_output_cost_usd`、`reasoning_output_cost_usd`，以及可计价总额 `official_models_cost_usd`、未计价事件数 `unpriced_requests` 和用量 `unpriced_tokens`；
 - `daily_running_time.csv`：每日合并时长、直接相加的总时长、占比和日期是否已结束；
 - `running_intervals.csv`：与所选日期相交的原始回合运行区间及时间来源，可用于核对；
 - `thread_usage.csv`、`model_usage.csv`：按任务和模型汇总；任务表的 `total_tokens` 包含主代理和所有层级子代理，`main_agent_tokens`、`subagent_tokens` 分别列出两部分，`subagent_sessions` 为有用量的子代理会话数，`project_name` 和 `thread_started_at` 对应 06 图左侧标签；
-- `summary.json`：覆盖时间、总量、峰值、整体缓存未命中率和解析统计；`running_time` 包含合并时长、直接相加的总时长、日均占比和峰值日期；`recent_hourly_api_cost` 包含 13 图的币种、估算总额、未计价请求与用量，以及记录单价的来源、核实日期和规则。
+- `summary.json`：覆盖时间、总量、峰值、整体缓存未命中率和解析统计；`running_time` 包含合并时长、直接相加的总时长、日均占比和峰值日期；`recent_hourly_api_cost` 和 `daily_api_cost_composition` 分别包含 13、14 图的币种、估算总额、未计价事件与用量，以及记录单价的来源、核实日期和规则；后者的 `components_usd` 按五个分类费用字段保存所选时段的分类总额。
 
 
 01、06、12 图沿用 02 图的模型配色和堆叠顺序：auto-review 在最上层（横条中为最右侧），其余模型按所选时段的首次出现时间排列；06 的任务子集和 12 的最近七日窗口沿用整个所选时段的颜色，不重新分配。保留 `unknown` 等记录中的模型名称，不合并为 `other`；06、12 的图例仅列出当前图片中有用量的模型。13 图沿用相同的模型配色和顺序，仅显示有记录单价且在当前图片中产生费用的模型。
 
-费用脚本另生成 09 图和费用明细，见 [API 费用估算](api-cost.md)。`summary.json` 的 `charts` 列出 `report` 生成的静态图片，包含 13 图；09 静态图片由费用脚本单独管理。`animations` 列出本次 `report` 生成的动画；`animate` 单独运行时更新所选编号的条目并保留其他条目，每项包括 `chart`、`file`、`format`、`codec`、`start_date`、`end_date`、`timezone`、`frames`、`encoded_frames`、`fps`、`end_hold_seconds`、`duration_seconds` 和固定的 `model_colors`。日期为首尾快照的本地日期，`frames` 为日期快照数，`encoded_frames` 包含末尾静止的一秒所用的重复帧；`end_hold_seconds` 为额外停留秒数，`duration_seconds` 为包含停留的总播放秒数。
+14 图沿用 03 图的 token 分类颜色，图例仅列出有可计价费用的分类。推理输出是输出的子集，按相同输出单价拆分为可见输出与推理输出，两部分费用不会重复相加。详细计价与排除规则见 [API 费用估算](api-cost.md#每日费用构成)。
+
+费用脚本另生成 09 图和费用明细，见 [API 费用估算](api-cost.md)。`summary.json` 的 `charts` 列出 `report` 生成的静态图片，包含 13、14 图；09 静态图片由费用脚本单独管理。`animations` 列出本次 `report` 生成的动画；`animate` 单独运行时更新所选编号的条目并保留其他条目，每项包括 `chart`、`file`、`format`、`codec`、`start_date`、`end_date`、`timezone`、`frames`、`encoded_frames`、`fps`、`end_hold_seconds`、`duration_seconds` 和固定的 `model_colors`。日期为首尾快照的本地日期，`frames` 为日期快照数，`encoded_frames` 包含末尾静止的一秒所用的重复帧；`end_hold_seconds` 为额外停留秒数，`duration_seconds` 为包含停留的总播放秒数。

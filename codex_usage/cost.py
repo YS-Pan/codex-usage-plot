@@ -25,6 +25,8 @@ import pandas as pd
 from matplotlib.ticker import FuncFormatter, NullFormatter
 
 from .charts import (
+    COMPOSITION_COLUMNS,
+    COMPOSITION_LABELS,
     breakdown_color_map,
     configure_matplotlib,
     format_tokens,
@@ -42,6 +44,15 @@ from .progress import ProgressReporter, report_progress
 
 
 MILLION = 1_000_000
+
+COST_COMPOSITION_COLUMNS = [
+    "uncached_input_cost_usd",
+    "cached_input_cost_usd",
+    "cache_write_cost_usd",
+    "visible_output_cost_usd",
+    "reasoning_output_cost_usd",
+]
+COST_COMPOSITION_TOKENS = dict(zip(COST_COMPOSITION_COLUMNS, COMPOSITION_COLUMNS))
 
 
 def official_price_history() -> dict[str, list[dict[str, Any]]]:
@@ -393,6 +404,110 @@ def plot_cumulative_cost(
         axis.set_xticks([])
         axis.set_yticks([])
     save_figure(figure, output.parent, output.stem, output.suffix.lstrip("."), dpi)
+
+
+def aggregate_daily_cost_composition(
+    events: pd.DataFrame, dates: pd.DatetimeIndex,
+) -> pd.DataFrame:
+    """Price events first, then sum mutually exclusive costs on local calendar days."""
+    daily = pd.DataFrame(0.0, index=dates, columns=[
+        *COST_COMPOSITION_COLUMNS, "official_models_cost_usd",
+    ])
+    daily.index.name = "date"
+    daily["unpriced_requests"] = 0
+    daily["unpriced_tokens"] = 0
+    local_events = events.assign(timestamp=events["timestamp"].dt.tz_convert(dates.tz))
+    selected = local_events.loc[
+        (local_events["timestamp"] >= dates[0])
+        & (local_events["timestamp"] < dates[-1] + pd.DateOffset(days=1))
+    ] if len(dates) else local_events.iloc[:0]
+    for model in OFFICIAL_PRICES:
+        subset = selected.loc[(selected["model"] == model) & _has_cost_breakdown(selected)]
+        if subset.empty:
+            continue
+        calculated = calculate_model_event_costs(subset, model)
+        output_tokens = calculated["output_tokens"]
+        reasoning_tokens = calculated.get(
+            "reasoning_output_tokens", pd.Series(0, index=calculated.index),
+        ).clip(lower=0, upper=output_tokens)
+        reasoning_share = reasoning_tokens.div(output_tokens.where(output_tokens > 0)).fillna(0)
+        calculated["reasoning_output_cost_usd"] = calculated["output_cost_usd"] * reasoning_share
+        calculated["visible_output_cost_usd"] = (
+            calculated["output_cost_usd"] - calculated["reasoning_output_cost_usd"]
+        )
+        values = calculated.set_index("timestamp")[COST_COMPOSITION_COLUMNS].resample("D").sum()
+        daily[COST_COMPOSITION_COLUMNS] += values.reindex(dates, fill_value=0.0)
+    daily["official_models_cost_usd"] = daily[COST_COMPOSITION_COLUMNS].sum(axis=1)
+    eligible = selected["model"].isin(OFFICIAL_PRICES) & _has_cost_breakdown(selected)
+    unpriced = selected.assign(
+        unpriced_request=(~eligible).astype("int64"),
+        unpriced_token=np.where(
+            eligible,
+            (selected["total_tokens"] - selected["input_tokens"] - selected["output_tokens"]).clip(lower=0),
+            selected["total_tokens"],
+        ),
+    ).set_index("timestamp")
+    for target, source in [("unpriced_requests", "unpriced_request"), ("unpriced_tokens", "unpriced_token")]:
+        daily[target] = unpriced[source].resample("D").sum().reindex(dates, fill_value=0).astype("int64")
+    return daily.reset_index()
+
+
+def plot_daily_cost_composition(
+    daily: pd.DataFrame, output_dir: Path, image_format: str, dpi: int,
+    *, component_colors: dict[str, Any] | None = None,
+) -> Path:
+    """Draw each day's estimated token costs as stacked daily bars."""
+    configure_matplotlib()
+    figure, axis = plt.subplots(figsize=(13, 5.8))
+    dates = daily["date"].dt.tz_localize(None)
+    active = [COST_COMPOSITION_TOKENS[column] for column in COST_COMPOSITION_COLUMNS if daily[column].sum() > 0]
+    colors = component_colors if component_colors is not None else breakdown_color_map(active)
+    fallback_colors = breakdown_color_map(COMPOSITION_COLUMNS)
+    bottom = np.zeros(len(daily), dtype=float)
+    for column in COST_COMPOSITION_COLUMNS:
+        values = daily[column].to_numpy(dtype=float)
+        if not values.any():
+            continue
+        token_column = COST_COMPOSITION_TOKENS[column]
+        axis.bar(
+            dates, values, width=0.82, bottom=bottom,
+            color=colors.get(token_column, fallback_colors[token_column]),
+            alpha=1.0, linewidth=0, edgecolor="none",
+            label=f"{COMPOSITION_LABELS[token_column]}: ${values.sum():,.2f}",
+        )
+        bottom += values
+    total = float(daily["official_models_cost_usd"].sum())
+    axis.set(
+        title=f"Daily estimated API cost by token type — total ${total:,.2f}",
+        ylabel="Estimated cost (USD)", yscale="linear",
+    )
+    axis.set_ylim(bottom=0)
+    axis.yaxis.set_major_formatter(FuncFormatter(
+        lambda value, _pos: f"${value:,.2f}" if axis.get_ylim()[1] < 10 else f"${value:,.0f}"
+    ))
+    setup_date_axis(axis)
+    if len(dates):
+        # A single day still needs a visible horizontal time span.
+        axis.set_xlim(dates.iloc[0] - pd.Timedelta(hours=12), dates.iloc[-1] + pd.Timedelta(hours=12))
+    if axis.containers:
+        axis.legend(frameon=False, ncol=2, loc="upper left", fontsize=9)
+    else:
+        axis.set_ylim(0, 1)
+        axis.set_yticks([0, 1])
+        axis.text(
+            0.5, 0.5, "No estimated cost for models with recorded API rates",
+            transform=axis.transAxes, ha="center", va="center", color="#64748B",
+        )
+        if not len(dates):
+            axis.xaxis.set_major_formatter(NullFormatter())
+            axis.set_xticks([])
+    excluded = int(daily["unpriced_requests"].sum())
+    excluded_tokens = int(daily["unpriced_tokens"].sum())
+    axis.set_title(
+        f"{axis.get_title()}\nRecorded API rates; unpriced usage excluded"
+        f" ({excluded:,} events / {format_tokens(excluded_tokens)} tokens)", fontsize=11,
+    )
+    return save_figure(figure, output_dir, "14_daily_api_cost_composition", image_format, dpi)
 
 
 def aggregate_recent_hourly_cost(events: pd.DataFrame, hours: pd.DatetimeIndex) -> pd.DataFrame:

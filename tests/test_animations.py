@@ -158,6 +158,37 @@ class AnimationTests(unittest.TestCase):
                     self.assertGreater(image.width, 100)
         self.assertFalse(plt.get_fignums())
 
+    def test_daily_cost_frames_keep_daily_values_idle_days_and_fixed_component_colors(self):
+        from codex_usage import cost
+
+        events = synthetic_events([
+            ("2026-10-19T00:00:00Z", "gpt-6.1-sol", 100_000),
+            ("2026-10-20T00:00:00Z", "gpt-6.1-sol", 200_000),
+            ("2026-10-21T03:00:00Z", "gpt-6.1-sol", 1_000_000_000),
+        ])
+        events.loc[0, ["cached_input_tokens", "cached_input_component"]] = 100_000
+        events.loc[0, "uncached_input_tokens"] = 0
+        options = animations.AnimationOptions(charts=(14,), start=date(2026, 10, 19),
+                                              end=date(2026, 10, 21), dpi=30)
+        dates = animations.animation_dates(options, self.zone, self.observed)
+        renderer = animations.FrameRenderer(events, [], self.zone, dates[0].date(), dates, options, 3, self.observed)
+        original_plot = cost.plot_daily_cost_composition
+        snapshots = []
+
+        def inspect(daily, *args, **kwargs):
+            snapshots.append((daily.copy(), dict(kwargs["component_colors"])))
+            return original_plot(daily, *args, **kwargs)
+
+        with patch.object(cost, "plot_daily_cost_composition", side_effect=inspect):
+            for stamp in dates:
+                renderer.render(14, stamp).close()
+        expected_values = [[0.01], [0.01, 0.4], [0.01, 0.4, 0.0]]
+        for (daily, colors), expected in zip(snapshots, expected_values):
+            np.testing.assert_allclose(daily["official_models_cost_usd"], expected)
+            self.assertEqual(colors, renderer.component_colors)
+            self.assertEqual(to_hex(colors["cached_input_component"]), "#14b8a6")
+        self.assertEqual(snapshots[-1][0]["date"].dt.date.tolist(), [stamp.date() for stamp in dates])
+
     def test_real_mp4_round_trip_and_atomic_preservation_on_render_error(self):
         import imageio_ffmpeg
 
@@ -258,7 +289,7 @@ class AnimationTests(unittest.TestCase):
         self.assertEqual([item["chart"] for item in summary["animations"]], [2])
         self.assertEqual(summary["animations"][0]["frames"], 31)
         self.assertEqual(summary["animations"][0]["end_date"], datetime.now(self.zone).date().isoformat())
-        self.assertEqual(len(summary["charts"]), 12)
+        self.assertEqual(len(summary["charts"]), 13)
         with patch.object(animations, "ffmpeg_executable") as encoder:
             self.assertEqual(animations.export_animations(events, [], self.output, self.zone, date(2026, 10, 20),
                                                          animations.AnimationOptions(charts=())), [])
