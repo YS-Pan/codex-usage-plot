@@ -11,12 +11,15 @@ import subprocess
 import sys
 import threading
 import traceback
+from time import monotonic
 from datetime import datetime
 from dataclasses import asdict, dataclass
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from .progress import PROGRESS_ENV, ProgressEvent, format_elapsed, parse_progress
 
 
 APP_DIR = Path(__file__).resolve().parents[1]
@@ -86,6 +89,23 @@ def worker_python() -> str:
     return str(executable)
 
 
+class ProgressLogReader:
+    """Tail complete UTF-8 records without blocking on a child process pipe."""
+
+    def __init__(self, stream) -> None:
+        self.stream = stream
+        self.pending = b""
+
+    def forward(self, messages: queue.Queue) -> None:
+        while chunk := self.stream.read(65536):
+            lines = (self.pending + chunk).split(b"\n")
+            self.pending = lines.pop()
+            for line in lines:
+                event = parse_progress(line.decode("utf-8", errors="replace"))
+                if event is not None:
+                    messages.put(("progress", event))
+
+
 def generate_reports(
     output_dir: Path,
     messages: queue.Queue,
@@ -102,19 +122,21 @@ def generate_reports(
         options = options or load_options()
         environment = os.environ.copy()
         environment.update(PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
+        environment[PROGRESS_ENV] = "json"
         steps = [
             (
-                "1/2 · 增量读取并生成图片与动画…" if incremental else "1/2 · 全部读取并生成图片与动画…",
+                "正在启动增量读取…" if incremental else "正在启动完整读取…",
                 "report",
                 usage_arguments(output_dir, options, incremental),
             ),
             (
-                "2/2 · 正在生成费用估算…",
+                "正在启动费用估算…",
                 "cost",
                 ["--events", str(output_dir / "events.csv"), "--output", str(output_dir)],
             ),
         ]
-        with log_path.open("w", encoding="utf-8") as log:
+        with log_path.open("w", encoding="utf-8") as log, log_path.open("rb") as progress_log:
+            reader = ProgressLogReader(progress_log)
             log.write(f"Started: {datetime.now().isoformat(timespec='seconds')}\n")
             validate_options(options)
             try:
@@ -148,8 +170,10 @@ def generate_reports(
                                 process.wait()
                             messages.put(("cancelled", "更新已停止"))
                             return
+                        reader.forward(messages)
                         try:
                             returncode = process.wait(timeout=0.2)
+                            reader.forward(messages)
                             break
                         except subprocess.TimeoutExpired:
                             continue
@@ -195,6 +219,10 @@ class UsageApp:
         self.worker: threading.Thread | None = None
         self.closing = False
         self.settings_open = False
+        self.started_at: float | None = None
+        self.stage_started_at: float | None = None
+        self.progress_stage: str | None = None
+        self.progress_mode = "indeterminate"
         options = load_options()
         self.codex_home = tk.StringVar(value=str(options.codex_home))
         self.timezone = tk.StringVar(value=options.timezone)
@@ -237,6 +265,12 @@ class UsageApp:
         self.cancel_button = ttk.Button(self.activity, text="停止", command=self.stop_update,
                                          state="disabled", width=7)
         self.cancel_button.grid(row=0, column=1)
+        self.progress_detail = tk.StringVar(value="")
+        ttk.Label(self.activity, textvariable=self.progress_detail, style="Status.TLabel",
+                  wraplength=430).grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        self.elapsed = tk.StringVar(value="")
+        ttk.Label(self.activity, textvariable=self.elapsed, style="Status.TLabel").grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=(3, 0))
         self.activity.grid_remove()
 
         toolbar = ttk.Frame(frame)
@@ -337,7 +371,13 @@ class UsageApp:
         for widget in self.settings_widgets:
             widget.state(["disabled"])
         self.status.set("正在准备增量读取…" if incremental else "正在准备完整读取…")
+        self.started_at = self.stage_started_at = monotonic()
+        self.progress_stage = None
+        self.progress_detail.set("")
+        self.elapsed.set("已用 00:00 · 当前阶段 00:00")
         self.activity.grid()
+        self.progress_mode = "indeterminate"
+        self.progress.configure(mode="indeterminate", value=0, maximum=100)
         self.progress.start(12)
         self.resize_to_content()
         self.worker = threading.Thread(
@@ -346,13 +386,34 @@ class UsageApp:
         )
         self.worker.start()
 
+    def show_progress(self, event: ProgressEvent) -> None:
+        if event.stage != self.progress_stage:
+            self.progress_stage = event.stage
+            self.stage_started_at = monotonic()
+        self.status.set(event.label)
+        detail = "\n".join(part for part in (event.counts, event.detail) if part)
+        self.progress_detail.set(detail)
+        mode = "determinate" if event.percent is not None else "indeterminate"
+        if mode != self.progress_mode:
+            self.progress.stop()
+            self.progress.configure(mode=mode, maximum=100, value=0)
+            self.progress_mode = mode
+            if mode == "indeterminate":
+                self.progress.start(12)
+        if event.percent is not None:
+            self.progress.configure(value=event.percent)
+        self.resize_to_content()
+
     def poll_messages(self) -> None:
         try:
             while True:
                 kind, text = self.messages.get_nowait()
-                if kind == "status":
+                if kind in ("status", "progress"):
                     if not self.closing and not self.cancel.is_set():
-                        self.status.set(text)
+                        event = text if kind == "progress" else ProgressEvent("startup:" + text, text)
+                        self.show_progress(event)
+                    continue
+                if kind not in ("done", "cancelled", "error"):
                     continue
                 self.worker = None
                 self.progress.stop()
@@ -364,12 +425,19 @@ class UsageApp:
                 self.cancel_button.state(["disabled"])
                 for widget in self.settings_widgets:
                     widget.state(["!disabled"])
-                self.status.set(text.splitlines()[0])
+                elapsed = f" · 用时 {format_elapsed(monotonic() - self.started_at)}" if self.started_at is not None else ""
+                self.status.set(text.splitlines()[0] + elapsed)
                 self.resize_to_content()
                 if kind == "error":
                     messagebox.showerror("更新未完成", text, parent=self.root)
         except queue.Empty:
             pass
+        if self.worker is not None and self.started_at is not None:
+            now = monotonic()
+            self.elapsed.set(
+                f"已用 {format_elapsed(now - self.started_at)} · "
+                f"当前阶段 {format_elapsed(now - self.stage_started_at)}"
+            )
         self.root.after(100, self.poll_messages)
 
     def show_folder(self) -> None:

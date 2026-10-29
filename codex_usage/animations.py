@@ -24,6 +24,7 @@ import pandas as pd
 from PIL import Image, ImageOps
 
 from .running_time import RunningInterval, aggregate_daily_running_time, local_midnight
+from .progress import ProgressReporter, report_progress
 
 
 CHART_NAMES = {
@@ -279,7 +280,7 @@ class FrameRenderer:
 def export_animations(
     events: pd.DataFrame, intervals: list[RunningInterval], output_dir: Path,
     target_tz: tzinfo, history_start: date, options: AnimationOptions,
-    *, top_threads: int = 15, observed_at: datetime | None = None,
+    *, top_threads: int = 15, observed_at: datetime | None = None, progress: bool = True,
 ) -> list[dict[str, Any]]:
     if not options.charts:
         return []
@@ -294,10 +295,21 @@ def export_animations(
         path = output_dir / f"{CHART_NAMES[number]}.mp4"
         width = int(14 * options.dpi) // 2 * 2
         height = int(max(8, 0.58 * top_threads + 2.8) * options.dpi if number == 6 else 8 * options.dpi) // 2 * 2
-        print(f"Animation {number:02d}: {dates[0]:%Y-%m-%d} → {dates[-1]:%Y-%m-%d} "
-              f"({len(dates)} snapshots + {END_HOLD_SECONDS}s final hold)", flush=True)
-        frames = (renderer.render(number, stamp) for stamp in dates)
-        write_mp4(frames, path, (width, height), options.fps, executable)
+        reporter = ProgressReporter(f"animation-{number}", f"生成动画 {number:02d}",
+                                    total=len(dates), unit="帧", enabled=progress)
+        reporter.update(0, f"{dates[0]:%Y-%m-%d} 至 {dates[-1]:%Y-%m-%d}")
+
+        def frames() -> Iterable[Image.Image]:
+            for index, stamp in enumerate(dates, start=1):
+                yield renderer.render(number, stamp)
+                # The encoder resumes the generator after accepting the image.
+                reporter.update(index, f"已生成至 {stamp:%Y-%m-%d}")
+            report_progress(f"animation-save-{number}", f"正在保存动画 {number:02d}",
+                            detail="等待编码完成", enabled=progress)
+
+        write_mp4(frames(), path, (width, height), options.fps, executable)
+        report_progress(f"animation-save-{number}", f"动画 {number:02d} 已保存",
+                        detail=path.name, enabled=progress)
         results.append({
             "chart": number, "file": path.name, "format": "mp4", "codec": "h264",
             "start_date": dates[0].date().isoformat(), "end_date": dates[-1].date().isoformat(),
@@ -309,7 +321,11 @@ def export_animations(
         })
         if options.gif:
             gif_path = path.with_suffix(".gif")
+            report_progress(f"animation-gif-{number}", f"正在转换 GIF 动画 {number:02d}",
+                            enabled=progress)
             convert_mp4_to_gif(path, gif_path, executable)
+            report_progress(f"animation-gif-{number}", f"GIF 动画 {number:02d} 已保存",
+                            detail=gif_path.name, enabled=progress)
             results.append({**results[-1], "file": gif_path.name, "format": "gif", "codec": "gif"})
     return results
 
@@ -357,6 +373,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dpi", type=int, default=100, help="动画 DPI，默认 100。")
     parser.add_argument("--gif", action="store_true", help="同时生成循环播放的 GIF 动图，默认只生成 MP4。")
     parser.add_argument("--top-threads", type=int, default=15, help="06 图任务数量，默认 15。")
+    parser.add_argument("--quiet", action="store_true", help="隐藏进度，保留最终结果。")
     args = parser.parse_args(argv)
     try:
         options = AnimationOptions(
@@ -370,10 +387,12 @@ def main(argv: list[str] | None = None) -> int:
         events, intervals, summary, target_tz, history_start = read_report(directory)
         if 10 in options.charts and not (directory / "running_intervals.csv").is_file():
             raise ValueError("缺少 running_intervals.csv，请重新生成用量数据后再生成 10 图动画。")
-        results = export_animations(events, intervals, directory, target_tz, history_start, options, top_threads=args.top_threads)
+        results = export_animations(events, intervals, directory, target_tz, history_start, options,
+                                    top_threads=args.top_threads, progress=not args.quiet)
         updated = {item["file"]: item for item in summary.get("animations", [])}
         updated.update({item["file"]: item for item in results})
         summary["animations"] = list(updated.values())
+        report_progress("animation-summary", "正在保存动画汇总", enabled=not args.quiet)
         staged: Path | None = None
         try:
             with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", prefix=".animation-summary-", suffix=".json", dir=directory, delete=False) as handle:

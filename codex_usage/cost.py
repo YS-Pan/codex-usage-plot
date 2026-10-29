@@ -34,6 +34,7 @@ from .charts import (
     setup_recent_hourly_axis,
     weekly_pivot,
 )
+from .progress import ProgressReporter, report_progress
 
 
 PRICE_DATE = "2026-10-07"
@@ -550,6 +551,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="结果目录，默认 codex_usage_report。",
     )
     parser.add_argument("--dpi", type=int, default=160, help="图片 DPI，默认 160。")
+    parser.add_argument("--quiet", action="store_true", help="隐藏进度，保留最终结果。")
     return parser
 
 
@@ -563,6 +565,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.dpi <= 0:
         parser.error("--dpi 必须大于 0。")
 
+    report_progress("cost-read", "正在读取费用估算数据", enabled=not args.quiet)
     events = pd.read_csv(events_path)
     missing = REQUIRED_COLUMNS.difference(events.columns)
     if missing:
@@ -572,6 +575,7 @@ def main(argv: list[str] | None = None) -> int:
     events["timestamp"] = pd.to_datetime(events["timestamp"], format="mixed")
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    report_progress("cost-calculate", "正在计算费用估算", enabled=not args.quiet)
     model_detail, priced_events = summarize_official_models(events)
     priced_subtotal = float(priced_events["total_cost_usd"].sum())
     scenarios, scenario_events = auto_review_scenarios(events, priced_subtotal)
@@ -582,14 +586,24 @@ def main(argv: list[str] | None = None) -> int:
     model_order = events.groupby("model")["timestamp"].min().sort_values(kind="stable").index
     model_colors = {model: model_colors[model] for model in model_order}
 
+    data_progress = ProgressReporter("cost-data", "保存费用数据文件", total=3,
+                                     unit="个", enabled=not args.quiet)
+    data_progress.update(0)
     model_detail.to_csv(
         output_dir / "api_cost_by_model.csv", index=False, encoding="utf-8-sig"
     )
+    data_progress.update(1, "api_cost_by_model.csv")
     scenarios.to_csv(
         output_dir / "api_cost_scenarios.csv", index=False, encoding="utf-8-sig"
     )
+    data_progress.update(2, "api_cost_scenarios.csv")
     daily.to_csv(output_dir / "daily_api_cost.csv", index=False, encoding="utf-8-sig")
+    data_progress.update(3, "daily_api_cost.csv")
+    image_progress = ProgressReporter("cost-image", "生成费用图片 09", total=1,
+                                      unit="张", enabled=not args.quiet)
+    image_progress.update(0)
     plot_cumulative_cost(daily, output_dir / "09_cumulative_api_cost.png", args.dpi, model_colors)
+    image_progress.update(1, "09_cumulative_api_cost.png")
 
     auto_events = events.loc[events["model"] == AUTO_REVIEW_MODEL]
     total_only_snapshot_tokens = int(
@@ -636,6 +650,7 @@ def main(argv: list[str] | None = None) -> int:
             "codex-auto-review scenarios are illustrations, not an official price mapping.",
         ],
     }
+    report_progress("cost-summary", "正在保存费用估算汇总", enabled=not args.quiet)
     with (output_dir / "api_cost_estimate.json").open("w", encoding="utf-8") as handle:
         json.dump(report, handle, ensure_ascii=False, indent=2)
         handle.write("\n")
