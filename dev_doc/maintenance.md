@@ -17,7 +17,7 @@ CLI / 统计测试无需桌面显示；GUI 人工验收需要 Tcl/Tk 和桌面�
 | 增量缓存或压缩读取 | `codex_usage/cache.py`、`collect_cached_usage_data`、`rollout_lines` | `tests/test_codex_usage_cache.py`；与完整读取对比，检查追加、半行、替换、移动、删除和回滚 |
 | 新统计、字段或图表 | `aggregate_*`、`plot_*`、`export_report` | 相关合成数据测试；生成并查看正常、空闲和无数据图 |
 | 动画、模型配色或 MP4 编码 | `codex_usage/animations.py`、绘图函数的固定颜色参数、`figure_sink` | `tests/test_animations.py`；检查新模型与排名反转、空白帧、跨日截断、真实 MP4 解码及失败保留旧视频；运行 demo 并查看首、中、末帧 |
-| 费用估算 | `codex_usage/cost.py` | `tests/test_codex_usage_charts.py` 中费用相关测试；校验未知模型、长上下文阈值和缓存写入 |
+| 费用估算 | `codex_usage/cost.py` | `tests/test_codex_usage_charts.py` 中费用相关测试，以及 `tests/test_historical_costs.py`；校验未知模型、长上下文阈值、缓存写入、UTC 生效边界和各费用入口一致性 |
 | 启动、选项和错误处理 | 启动器、`codex_usage/environment.py`、`codex_usage/gui.py` | `tests/test_user_entrypoints.py`；实际启动、生成、停止以及错误后重试 |
 | 包结构、命令入口和默认路径 | `codex_usage/__main__.py`、各模块的路径常量 | `tests/test_cli.py`；无依赖帮助、参数传递、源码根目录定位和标准 unittest 自动发现 |
 | 纯文档文字与链接 | README、`docs/`、`dev_doc/` | 检查链接、路径、UTF-8 与 `git diff --check`，无需读取真实日志 |
@@ -35,7 +35,7 @@ CLI / 统计测试无需桌面显示；GUI 人工验收需要 Tcl/Tk 和桌面�
 
 ## 更新价格
 
-修改价格前核对官方来源。单价、`verified_on` / `PRICE_DATE`、长上下文规则、缓存写入规则和未知模型假设要一起检查，并同步 [费用说明](../docs/api-cost.md)。不要把情景估算表述为实际账单，也不要在无关的界面或文档整理中顺带改价。
+修改价格前核对官方来源及生效时间。在 `OFFICIAL_PRICE_HISTORY` 中追加已确认的费率档，保留兼容基线和旧档，避免重算旧日志时套用新价格。`OFFICIAL_PRICES` 是最新记录单价的兼容视图；内部计价使用 `calculate_model_event_costs`。单价、`verified_on` / `PRICE_DATE`、长上下文规则、缓存写入规则和未知模型假设要一起检查，并同步 [费用说明](../docs/api-cost.md#按事件时间选择费率)。核实日期不能当作生效日期；跨费率测试也应覆盖 09 动画、06 / 13 汇总和 auto-review 情景。不要把情景估算表述为实际账单，也不要在无关的界面或文档整理中顺带改价。
 
 ## 新手流程验收
 
