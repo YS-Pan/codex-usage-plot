@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codex-usage-plot"
+version = "0.2.0"
+description = "Local Codex usage queries, pictures and animations"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+data = [
+  "numpy>=1.26",
+  "pandas>=2.0",
+  "backports.zstd>=1.0; python_version < '3.14'",
+  "tzdata; sys_platform == 'win32'",
+]
+plotting = ["codex-usage-plot[data]==0.2.0", "matplotlib>=3.8", "Pillow>=8"]
+test = ["codex-usage-plot[plotting]==0.2.0", "imageio-ffmpeg>=0.6"]
+
+[project.scripts]
+codex-usage = "codex_usage.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["codex_usage"]

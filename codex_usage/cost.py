@@ -15,14 +15,9 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-import matplotlib
-
-matplotlib.use("Agg")
-
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib.ticker import FuncFormatter, NullFormatter
+
 
 from .charts import (
     COMPOSITION_COLUMNS,
@@ -41,6 +36,15 @@ from .model_prices import (
     OFFICIAL_PRICES, OFFICIAL_PRICE_HISTORY, PRICE_DATE,
 )
 from .progress import ProgressReporter, report_progress
+from .paths import report_dir
+
+
+def _load_plotting() -> None:
+    global plt, FuncFormatter, NullFormatter
+    from .charts import _load_plotting as load_charts
+    load_charts()
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import FuncFormatter, NullFormatter
 
 
 MILLION = 1_000_000
@@ -370,6 +374,7 @@ def plot_cumulative_cost(
     dpi: int,
     model_colors: dict[str, Any],
 ) -> None:
+    _load_plotting()
     configure_matplotlib()
     figure, axis = plt.subplots(figsize=(13, 5.8))
     dates = daily["date"].dt.tz_localize(None)
@@ -457,6 +462,7 @@ def plot_daily_cost_composition(
     *, component_colors: dict[str, Any] | None = None,
 ) -> Path:
     """Draw each day's estimated token costs as stacked daily bars."""
+    _load_plotting()
     configure_matplotlib()
     figure, axis = plt.subplots(figsize=(13, 5.8))
     dates = daily["date"].dt.tz_localize(None)
@@ -557,6 +563,7 @@ def plot_recent_hourly_cost(
     dpi: int,
     *, model_colors: dict[str, Any] | None = None,
 ) -> Path:
+    _load_plotting()
     configure_matplotlib()
     figure, axis = plt.subplots(figsize=(14, 5.5))
     hours = hourly["hour_start"]
@@ -609,14 +616,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--events",
         type=Path,
-        default=Path("codex_usage_report/events.csv"),
+        default=report_dir() / "events.csv",
         help="用量数据文件 events.csv 路径。",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("codex_usage_report"),
-        help="结果目录，默认 codex_usage_report。",
+        default=report_dir(),
+        help="结果目录，默认用户运行目录中的 reports。",
     )
     parser.add_argument("--dpi", type=int, default=160, help="图片 DPI，默认 160。")
     parser.add_argument("--quiet", action="store_true", help="隐藏进度，保留最终结果。")

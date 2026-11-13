@@ -20,13 +20,13 @@ from tkinter import filedialog, messagebox, ttk
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .progress import PROGRESS_ENV, ProgressEvent, format_elapsed, parse_progress
+from .paths import report_dir, report_cache_file, settings_file
 
 
-APP_DIR = Path(__file__).resolve().parents[1]
-REPORT_DIR = APP_DIR / "codex_usage_report"
-CACHE_FILE = APP_DIR / "codex_usage_cache.sqlite3"
+REPORT_DIR = report_dir()
+CACHE_FILE = report_cache_file()
 LOG_NAME = "gui_run.log"
-SETTINGS_FILE = APP_DIR / "codex_usage_settings.json"
+SETTINGS_FILE = settings_file()
 
 
 @dataclass(frozen=True)
@@ -141,6 +141,7 @@ def generate_reports(
             validate_options(options)
             try:
                 settings = {**asdict(options), "codex_home": str(options.codex_home)}
+                SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
                 SETTINGS_FILE.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             except OSError as exc:
                 log.write(f"未能保存界面设置，本次仍使用所选配置：{exc}\n")
@@ -153,7 +154,6 @@ def generate_reports(
                 log.flush()
                 with subprocess.Popen(
                     [worker_python(), "-u", "-m", "codex_usage", script, *arguments],
-                    cwd=APP_DIR,
                     env=environment,
                     stdin=subprocess.DEVNULL,
                     stdout=log,
@@ -189,7 +189,7 @@ def generate_reports(
                 log.write("\n" + traceback.format_exc())
             tail = log_path.read_text(encoding="utf-8", errors="replace")[-1800:]
             if "ModuleNotFoundError" in tail:
-                detail = "缺少运行依赖。请关闭窗口，重新双击「启动用量统计.cmd」，\n或运行 python -m codex_usage setup 后重试。"
+                detail = "缺少运行依赖。请用当前 Python 运行\npython -m codex_usage setup --install plotting 后重试。"
             else:
                 for line in reversed(tail.splitlines()):
                     if line.startswith(("错误：", "error:")):
@@ -280,7 +280,7 @@ class UsageApp:
         self.settings_toggle.grid(row=0, column=0, sticky="w")
         ttk.Button(toolbar, text="运行日志", command=self.show_log, width=9).grid(
             row=0, column=2, padx=(0, 6))
-        ttk.Button(toolbar, text="使用说明", command=lambda: self.open_result(APP_DIR / "docs" / "usage.md"),
+        ttk.Button(toolbar, text="使用说明", command=self.show_help,
                    width=9).grid(row=0, column=3)
 
         self.settings_panel = ttk.Frame(frame)
@@ -319,6 +319,16 @@ class UsageApp:
         self.root.update_idletasks()
         width = max(460, self.root.winfo_width(), self.root.winfo_reqwidth())
         self.root.geometry(f"{width}x{self.root.winfo_reqheight()}")
+
+    def show_help(self) -> None:
+        messagebox.showinfo(
+            "使用说明",
+            "点击「更新图片」读取本机日志；完成后点击「打开图片文件夹」。\n"
+            "日常更新使用增量读取。需要更改日志目录、时区或归档范围时展开「设置」。\n"
+            "「重新完整读取」用于排查缓存问题。更新中可停止；关闭窗口也会停止正在运行的任务。\n"
+            "每次默认生成图 2 的 MP4 动画；FFmpeg 需要已安装或配置。",
+            parent=self.root,
+        )
 
     def toggle_settings(self) -> None:
         self.set_settings_open(not self.settings_open)

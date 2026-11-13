@@ -96,7 +96,7 @@ class EntryPointTests(unittest.TestCase):
         self.assertEqual(popen.call_count, 1)
         kind, text = list(messages.queue)[-1]
         self.assertEqual(kind, "error")
-        self.assertIn("启动用量统计.cmd", text)
+        self.assertIn("setup --install plotting", text)
         self.assertTrue((self.output / gui.LOG_NAME).is_file())
 
     def test_cancel_during_scan_terminates_child_and_skips_cost(self):
@@ -122,7 +122,6 @@ class EntryPointTests(unittest.TestCase):
         ready = subprocess.CompletedProcess([], 0, "", "")
         for argv in (["--check"], []):
             with self.subTest(argv=argv), redirect_stdout(io.StringIO()), \
-                    patch.object(setup, "ENV_PYTHON", Path(__file__)), \
                     patch.object(setup, "check_environment", return_value=ready), \
                     patch.object(setup.subprocess, "run") as run:
                 self.assertEqual(setup.main(argv), 0)
@@ -131,11 +130,11 @@ class EntryPointTests(unittest.TestCase):
     def test_setup_install_failure_returns_error_without_launching(self):
         missing = subprocess.CompletedProcess([], 1, "", "missing dependency")
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as errors, \
-                patch.object(setup, "ENV_PYTHON", Path(__file__)), \
+                patch.object(setup, "install_target", return_value="tool.whl[plotting]"), \
                 patch.object(setup, "check_environment", return_value=missing), \
                 patch.object(setup.subprocess, "run", side_effect=subprocess.CalledProcessError(1, "pip")), \
                 patch.object(setup.subprocess, "Popen") as popen:
-            self.assertEqual(setup.main([]), 1)
+            self.assertEqual(setup.main(["--install", "plotting"]), 1)
         popen.assert_not_called()
         self.assertIn("环境准备未完成", errors.getvalue())
 

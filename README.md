@@ -21,30 +21,40 @@
 
 ## 使用
 
-Windows 双击 `启动用量统计.cmd`，点击「更新图片」。首次完整读取，之后增量读取；完成后点击「打开图片文件夹」。
+安装后运行 `codex-usage gui`，点击「更新图片」。首次完整读取，之后增量读取；完成后点击「打开图片文件夹」。Windows 也可以为该命令创建快捷方式。
 
-图片和 CSV / JSON 数据文件保存在 `codex_usage_report/`。默认读取 `CODEX_HOME` 或用户目录下的 `.codex`，使用上海时区，包含归档记录。需要调整时展开「设置」。
+图片和 CSV / JSON 数据文件默认保存在工具用户状态目录的 `reports/`；运行 `codex-usage paths` 查看实际路径。GUI 默认读取 `CODEX_HOME` 或用户目录下的 `.codex`，使用上海时区，包含归档记录。需要调整时展开「设置」。
 
 每次更新默认额外生成图 2 的 MP4 动画，从 30 天前推进到今天，模型颜色保持一致。其他图片的动画按需生成，可以直接让 AI agent 按图片编号操作，见 [动画用法](docs/usage.md#动画)。
 
 更多操作见 [使用指南](docs/usage.md)，文件清单见 [输出文件参考](docs/reference.md)。
 
-其他项目可通过 `python -m codex_usage query` 按会话、回合和模型取得 JSON / CSV，用于子代理或实验记账，默认只返回数据。命令与 Python 示例见 [供其他项目调用](docs/integration.md)。
+其他项目可通过 `codex-usage query` 按会话、回合和模型取得 JSON / CSV，用于子代理或实验记账，默认只返回数据。命令与 Python 示例见 [供其他项目调用](docs/integration.md)。
 
 ## 安装
 
-需要 Python 3.10+；GUI 需要 Tkinter。Windows 可双击启动器自动准备项目环境；macOS / Linux 可通过命令行使用。
+0.2.0 使用普通 Python wheel 安装，发行名为 `codex-usage-plot`，需要 Python 3.10+。基础安装只用标准库；查询需安装 `data` extra，图片和 GUI 需 `plotting` extra。GUI 还需 Tcl/Tk；MP4 动画需自行安装 FFmpeg 并加入 PATH，或设置 `CODEX_USAGE_FFMPEG_EXE`。
 
-也可以将仓库地址或本地目录与下面这段话一起交给 AI agent：
+取得 wheel 后，使用日常运行工具的同一个 Python 安装，例如：
 
-```text
-请安装这个 Codex 本地用量统计工具。未下载时使用我提供的仓库地址克隆。
-阅读 AGENTS.md 和 docs/installation.md，在项目 .venv 中安装依赖并检查 Tkinter。
-使用合成 demo 验证，不读取我的真实日志、不自动打开 GUI。
-完成后告诉我项目位置、手动启动方式和验证结果。
+```sh
+python -m pip install "/path/to/codex_usage_plot-0.2.0-py3-none-any.whl[plotting]"
+codex-usage setup --gui
+codex-usage paths
 ```
 
-具体步骤见 [安装指南](docs/installation.md)。首次安装依赖需要网络，日常生成图片无需联网。
+`codex-usage` 与 `python -m codex_usage` 等价，可从任意工作目录运行；无需保留源码，也不依赖其他工具。启动时只检查环境，不创建虚拟环境或自动安装依赖。也可以将 wheel 路径与下面这段话一起交给 AI agent：
+
+```text
+请用我选定的同一个 Python，通过 python -m pip install 轻装我提供的 wheel，先不加 extra。
+先看 python -m codex_usage --help；查询用 setup --install data，图片或 GUI 用 setup --install plotting，均通过同一个 Python 的 -m codex_usage 显式执行。
+按用途检查 Tkinter 和已有外部 FFmpeg；缺失时说明需要安装或配置什么。
+状态和报告根目录已有明确选择就直接使用，否则先询问；用 setup --state-dir / --report-dir 保存，并保留旧设置、缓存和结果，明确迁移路径。
+用合成 demo 验证所选图片功能，不读取我的真实日志、不自动打开 GUI。
+完成后交代 Python、安装版本、目录、手动启动方式和实际验证结果及余项。
+```
+
+具体步骤及旧版迁移见 [安装指南](docs/installation.md)。安装依赖需要网络，日常生成图片在本地完成。
 
 ## 数据
 

@@ -2,7 +2,7 @@
 
 ## 项目与文件
 
-这是一个本地 Codex 用量统计工具，使用 Python 3.10+、pandas、NumPy、Matplotlib 和 Tkinter。面向用户的说明及 GUI 文案使用中文，图表沿用已有英文标注风格。
+这是一个可独立安装的本地 Codex 用量统计工具，使用 Python 3.10+。发行名 `codex-usage-plot`，包名 `codex_usage`，命令 `codex-usage`；基础入口仅用标准库，`data` / `plotting` extras 的依赖由 `pyproject.toml` 维护。面向用户的说明及 GUI 文案使用中文，图表沿用已有英文标注风格。
 
 README 首先面向决定是否安装的用户，优先展示真实用量图片；安装和环境准备面向 AI agent，步骤集中在 `docs/installation.md`；日常使用面向手动打开 GUI 的用户，主操作为增量「更新图片」。面向用户统一使用「图片」称呼，CSV / JSON 称为数据文件；保留既有命令与文件名。开发参考从 [dev_doc/README.md](dev_doc/README.md) 进入，详细技术说明维护在对应专题中。
 
@@ -12,27 +12,28 @@ README 首先面向决定是否安装的用户，优先展示真实用量图片�
 - `codex_usage/running_time.py`：解析回合运行区间、去重、按本地日期拆分并计算合并和相加时长。
 - `codex_usage/cost.py`：基于逐请求用量和记录的单价计算 API 费用估算。
 - `codex_usage/gui.py`、`启动用量统计.cmd`：Windows GUI 与启动器。
-- `codex_usage/environment.py`、`codex_usage/demo.py`：首次环境准备与合成数据演示。
+- `codex_usage/environment.py`、`codex_usage/demo.py`：当前解释器的功能检查、显式 extra 安装与合成数据演示。
 - `tests/test_codex_usage_charts.py`、`tests/test_codex_running_time.py`：基于合成数据的 unittest 测试。
 - `tests/test_codex_usage_cache.py`、`tests/test_user_entrypoints.py`：增量缓存及启动、选项、错误处理的合成数据测试。
 - `codex_usage/__main__.py`、`tests/test_cli.py`：统一命令入口、参数传递与目录定位验证。
-- `codex_usage_report/`：生成结果，包含本地使用记录；修改生成逻辑后通过脚本更新，避免手工修补输出结果。
+- 用户状态目录保存设置、缓存和默认结果，`codex-usage paths` 显示实际位置；迁移旧文件按 [安装指南](docs/installation.md#4-状态目录与旧版迁移) 显式保留或配置。生成结果通过脚本更新，避免手工修补输出。
 
 README 直接引用 `codex_usage_report/02_cumulative_tokens.png` 和 `codex_usage_report/10_daily_running_time.png`，不创建单独的预览图片或生成脚本。GitHub 保留这两张图片的现有版本；以后本地正常生成和更新，但所有提交、push 及 GitHub 插件上传均排除它们的后续修改，也不再反复询问上传授权。此约定用于减少自动审批带来的操作负担，作者明确表示原因并非图片内容敏感。两张图片已经被 Git 跟踪，不能依赖 `.gitignore` 屏蔽更新；提交方法见 [贡献说明](CONTRIBUTING.md#提交内容)。图 2 的 `02_cumulative_tokens.mp4` 和 `02_cumulative_tokens.gif` 作为 README 动画示例一同跟踪；上述排除更新约定继续适用于两张 PNG。其余生成结果继续忽略，测试和演示使用合成数据。
 
 ## 运行与验证
 
-在项目目录执行；如有 `.venv`，优先使用其中的 Python：
+使用选定的同一个 Python。开发依赖、测试、构建普通 wheel、重新安装和无关工作目录验收见 [贡献说明](CONTRIBUTING.md#本地开发)；源码和已安装包分别验证，修改保留在源码中。安装后可从任意目录执行：
 
 ```powershell
-python -m pip install -r requirements.txt
-python -m codex_usage report --timezone Asia/Shanghai
-python -m codex_usage cost
-python -m codex_usage gui
-python -m unittest -v
+codex-usage paths
+codex-usage report --timezone Asia/Shanghai
+codex-usage cost
+codex-usage gui
 ```
 
-GUI 默认包含归档记录，并将结果写入工具目录的 `codex_usage_report`。命令行仍应支持自定义数据目录、输出目录、时区、日期范围和 PNG/SVG/PDF 格式。
+GUI 默认包含归档记录。默认设置、缓存与结果使用本工具用户目录；`setup --state-dir` / `--report-dir` 保存目录选择，环境变量可覆盖，显式输出和缓存参数保持有效。路径优先级与迁移集中维护在安装指南。命令行仍应支持自定义数据目录、输出目录、时区、日期范围和 PNG/SVG/PDF 格式。
+
+启动及 `setup` / `check` 只检查环境；依赖安装仅通过用户显式的 `setup --install data|plotting` 或 pip 完成。工具不自动创建 `.venv`。生产安装的动画使用外部 FFmpeg，路径约定见安装指南；缺失时给出操作指引。
 
 统计或解析逻辑变更后运行相关测试；新增统计应覆盖真实边界，如零分母、空闲日期、加权计算、时区和重复日志。不要在测试中依赖用户真实日志。图表修改后生成并查看图片，检查坐标、图例、文字和无数据情况。纯文档修改无需运行统计脚本。
 

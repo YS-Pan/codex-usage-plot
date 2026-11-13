@@ -16,6 +16,7 @@ COMMANDS = {
     "demo": "demo",
     "setup": "environment",
     "check": "environment",
+    "paths": "paths",
 }
 
 
@@ -32,8 +33,9 @@ def main(argv: list[str] | None = None) -> int:
             "  python -m codex_usage animate   按编号从已有数据文件生成 MP4 / GIF 动画\n"
             "  python -m codex_usage cost      根据 events.csv 估算费用\n"
             "  python -m codex_usage demo      使用合成数据体验图片生成\n"
-            "  python -m codex_usage setup     准备本项目的 .venv 环境\n"
+            "  python -m codex_usage setup     检查或显式准备当前 Python 的可选依赖\n"
             "  python -m codex_usage check     只检查环境\n\n"
+            "  python -m codex_usage paths     显示设置、缓存与报告目录\n\n"
             "例如：python -m codex_usage report --timezone Asia/Shanghai --incremental\n"
             "查看子命令参数：python -m codex_usage report --help"
         ),
@@ -49,11 +51,13 @@ def main(argv: list[str] | None = None) -> int:
         module = import_module(f".{COMMANDS[args.command]}", __package__)
         return module.main(arguments) or 0
     except ModuleNotFoundError as exc:
+        extra = {"numpy": "data", "pandas": "data", "backports": "data", "backports.zstd": "data",
+                 "matplotlib": "plotting", "PIL": "plotting"}.get(exc.name)
+        if extra is None and exc.name != "tkinter":
+            raise
         print(f"错误：缺少运行依赖（{exc.name}）。", file=sys.stderr)
-        print(
-            "请双击「启动用量统计.cmd」，或运行 python -m codex_usage setup，"
-            "然后使用 .venv 中的 Python 重试。", file=sys.stderr,
-        )
+        if extra:
+            print(f"请用当前 Python 显式安装：python -m codex_usage setup --install {extra}", file=sys.stderr)
         if exc.name == "tkinter":
             print("Tkinter 需要通过 Python 安装程序或系统包管理器补装 Tcl/Tk。", file=sys.stderr)
         return 1

@@ -13,6 +13,8 @@ import sys
 import tempfile
 from typing import Any
 
+from .paths import query_cache_file
+
 
 ID_FIELDS = ("session_ids", "thread_ids", "turn_ids", "models")
 TABLE_FIELDS = ("events", "sessions", "turns", "running_intervals")
@@ -54,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timezone", default="UTC", help="输出及无偏移时间使用的 IANA 时区，默认 UTC。")
     parser.add_argument("--include-archived", action=argparse.BooleanOptionalAction, default=True, help="包含归档日志，默认包含。")
     parser.add_argument("--cache-file", type=Path, help="显式使用统计缓存；默认只读扫描，不创建缓存。")
-    parser.add_argument("--incremental", action="store_true", help="增量读取；未指定缓存时使用工具目录中的 codex_usage_query_cache.sqlite3。")
+    parser.add_argument("--incremental", action="store_true", help="增量读取；未指定缓存时使用用户运行目录中的 cache/codex_usage_query_cache.sqlite3。")
     parser.add_argument("--quiet", action="store_true", help="隐藏写入标准错误的扫描进度。")
     parser.add_argument("--include-cost", action="store_true", help="附带按工具现有单价计算的 API 费用估算。")
     parser.add_argument("--require-match", action="store_true", help="没有匹配结果或指定 ID 未匹配时返回退出码 3，仍输出数据。")
@@ -154,7 +156,7 @@ def main(argv: list[str] | None = None) -> int:
         selected = {key: list(dict.fromkeys([*getattr(args, key), *ids.get(key, [])])) for key in ID_FIELDS}
         cache_path = args.cache_file
         if args.incremental and cache_path is None:
-            cache_path = Path(__file__).resolve().parents[1] / "codex_usage_query_cache.sqlite3"
+            cache_path = query_cache_file()
         if cache_path is not None and args.ids_file is not None and cache_path.expanduser().resolve() == args.ids_file.expanduser().resolve():
             raise ValueError("--cache-file 不能覆盖 --ids-file 调用清单。")
         if args.output is not None:

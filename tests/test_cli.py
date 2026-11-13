@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 from codex_usage.__main__ import main
 from codex_usage.charts import build_parser
-from codex_usage import environment, gui
+from codex_usage import environment, gui, paths
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,12 +51,18 @@ class CommandLineTests(unittest.TestCase):
         self.assertIn("pandas", errors.getvalue())
         self.assertIn("codex_usage setup", errors.getvalue())
 
-    def test_package_move_keeps_default_outputs_in_project_root(self):
-        self.assertEqual(gui.APP_DIR, ROOT)
-        self.assertEqual(environment.APP_DIR, ROOT)
-        self.assertEqual(gui.REPORT_DIR, ROOT / "codex_usage_report")
-        self.assertEqual(gui.SETTINGS_FILE, ROOT / "codex_usage_settings.json")
-        self.assertEqual(build_parser().parse_args([]).cache_file, ROOT / "codex_usage_cache.sqlite3")
+    def test_default_outputs_use_user_state_and_explicit_overrides_survive(self):
+        self.assertEqual(gui.REPORT_DIR, paths.report_dir())
+        self.assertEqual(gui.SETTINGS_FILE, paths.settings_file())
+        self.assertEqual(build_parser().parse_args([]).cache_file, paths.report_cache_file())
+        with patch.dict(os.environ, {"CODEX_USAGE_STATE_DIR": str(ROOT / "state with spaces"),
+                                     "CODEX_USAGE_REPORT_DIR": str(ROOT / "reports with spaces")}):
+            defaults = build_parser().parse_args([])
+            self.assertEqual(defaults.output, ROOT / "reports with spaces")
+            self.assertEqual(defaults.cache_file, ROOT / "state with spaces/cache/codex_usage_cache.sqlite3")
+            explicit = build_parser().parse_args(["--output", "chosen", "--cache-file", "chosen.sqlite3"])
+            self.assertEqual(explicit.output, Path("chosen"))
+            self.assertEqual(explicit.cache_file, Path("chosen.sqlite3"))
 
 
 if __name__ == "__main__":

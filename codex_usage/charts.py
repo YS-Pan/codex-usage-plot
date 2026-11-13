@@ -25,17 +25,9 @@ from time import perf_counter
 from typing import Any, Callable, Iterator, TYPE_CHECKING
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-import matplotlib
-
-matplotlib.use("Agg")
-
-import matplotlib.dates as mdates
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib.colors import LogNorm, to_rgb
-from matplotlib.font_manager import fontManager
-from matplotlib.ticker import FuncFormatter, MaxNLocator, NullFormatter, PercentFormatter
+
 
 from .cache import (
     CacheInvalidError,
@@ -56,9 +48,23 @@ from .running_time import (
 from .thread_metadata import directory_name, enrich_thread_metadata
 from .progress import ProgressReporter, report_progress
 from .model_prices import AUTO_REVIEW_MODEL
+from .paths import report_dir, report_cache_file
 
 if TYPE_CHECKING:
     from .animations import AnimationOptions
+
+
+def _load_plotting() -> None:
+    """Import the optional picture dependencies only when a plot needs them."""
+    global plt, mdates, LogNorm, to_rgb, fontManager
+    global FuncFormatter, MaxNLocator, NullFormatter, PercentFormatter
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.dates as mdates
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import LogNorm, to_rgb
+    from matplotlib.font_manager import fontManager
+    from matplotlib.ticker import FuncFormatter, MaxNLocator, NullFormatter, PercentFormatter
 
 
 _figure_sink: ContextVar[Callable[[plt.Figure], None] | None] = ContextVar("figure_sink", default=None)
@@ -1089,6 +1095,7 @@ def aggregate_models(events: pd.DataFrame) -> pd.DataFrame:
 
 
 def configure_matplotlib() -> None:
+    _load_plotting()
     installed = {font.name for font in fontManager.ttflist}
     preferred = [
         "Microsoft YaHei",
@@ -1127,6 +1134,7 @@ def format_tokens(value: float, _position: object = None) -> str:
 
 
 def setup_date_axis(axis: plt.Axes, target_tz: tzinfo | None = None) -> None:
+    _load_plotting()
     locator = mdates.AutoDateLocator(minticks=4, maxticks=10, tz=target_tz)
     axis.xaxis.set_major_locator(locator)
     axis.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator, tz=target_tz))
@@ -1135,6 +1143,7 @@ def setup_date_axis(axis: plt.Axes, target_tz: tzinfo | None = None) -> None:
 def save_figure(
     figure: plt.Figure, output_dir: Path, filename: str, image_format: str, dpi: int
 ) -> Path:
+    _load_plotting()
     path = output_dir / f"{filename}.{image_format}"
     staged: Path | None = None
     try:
@@ -1166,6 +1175,7 @@ def plot_daily_usage(
     dpi: int,
     *, model_colors: dict[str, Any] | None = None,
 ) -> Path:
+    _load_plotting()
     model_daily = model_tokens_by_time(events, pd.DatetimeIndex(daily["date"]))
     figure, axis = plt.subplots(figsize=(13, 5.5))
     bottom = np.zeros(len(daily), dtype=float)
@@ -1208,6 +1218,7 @@ def plot_recent_hourly_usage(
     dpi: int,
     *, model_colors: dict[str, Any] | None = None,
 ) -> Path:
+    _load_plotting()
     figure, axis = plt.subplots(figsize=(14, 5.5))
     hours = hourly["hour_start"]
     total = int(hourly["total_tokens"].sum())
@@ -1245,6 +1256,7 @@ def setup_recent_hourly_axis(
     axis: plt.Axes, hours: pd.Series, title: str, ylabel: str, total_label: str
 ) -> None:
     """Share the local calendar and hour labels between the token and cost images."""
+    _load_plotting()
     target_tz = hours.dt.tz
     upper = hours.iloc[-1] + pd.Timedelta(hours=1)
     axis.set(
@@ -1301,6 +1313,7 @@ def plot_cumulative_usage(
     dpi: int,
     *, model_colors: dict[str, Any] | None = None,
 ) -> Path:
+    _load_plotting()
     cumulative = cumulative_model_tokens(events, pd.DatetimeIndex(daily["date"]))
     figure, axis = plt.subplots(figsize=(13, 5.8))
     dates = daily["date"].dt.tz_localize(None)
@@ -1349,6 +1362,7 @@ def plot_daily_composition(
     daily: pd.DataFrame, output_dir: Path, image_format: str, dpi: int,
     *, component_colors: dict[str, Any] | None = None,
 ) -> Path:
+    _load_plotting()
     active_columns = [column for column in COMPOSITION_COLUMNS if daily[column].sum() > 0]
     figure, axis = plt.subplots(figsize=(13, 6))
     for index, column in enumerate(active_columns):
@@ -1408,6 +1422,7 @@ def weekly_pivot(events: pd.DataFrame, category: str) -> pd.DataFrame:
 
 def breakdown_color_map(labels: Iterable[str]) -> dict[str, Any]:
     """Keep category colors consistent when another chart omits some labels."""
+    _load_plotting()
     labels = [str(label) for label in labels]
     colors = PALETTE if len(labels) <= len(PALETTE) else plt.get_cmap("tab20").colors
     return {label: colors[index % len(colors)] for index, label in enumerate(labels)}
@@ -1423,6 +1438,7 @@ def plot_weekly_breakdown(
     dpi: int,
     *, category_colors: dict[str, Any] | None = None,
 ) -> Path:
+    _load_plotting()
     pivot = weekly_pivot(events, category)
     figure, axis = plt.subplots(figsize=(13, 5.8))
     colors = category_colors if category_colors is not None else breakdown_color_map(pivot.columns)
@@ -1463,6 +1479,7 @@ def plot_weekly_breakdown(
 def plot_activity_heatmap(
     events: pd.DataFrame, output_dir: Path, image_format: str, dpi: int
 ) -> Path:
+    _load_plotting()
     heat_source = events.assign(
         weekday=events["timestamp"].dt.day_of_week,
         hour=events["timestamp"].dt.hour,
@@ -1524,6 +1541,7 @@ def plot_top_threads(
     *, model_colors: dict[str, Any] | None = None,
 ) -> Path:
     # Imported locally because the cost calculator shares the chart helpers.
+    _load_plotting()
     from .cost import AUTO_REVIEW_MODEL, aggregate_thread_model_costs
 
     selected = threads.head(top_n).sort_values("total_tokens", ascending=True).copy()
@@ -1648,6 +1666,7 @@ def plot_request_sizes_over_time(
     events: pd.DataFrame, output_dir: Path, image_format: str, dpi: int,
     *, source_colors: dict[str, Any] | None = None,
 ) -> Path:
+    _load_plotting()
     limit = 60_000
     sampled = (
         events.sample(limit, random_state=42).sort_values("timestamp")
@@ -1724,6 +1743,7 @@ def running_time_line_coordinates(
     dates: pd.Series, hours: pd.Series,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Keep linear interpolation accurate on both sides of the 24-hour knee."""
+    _load_plotting()
     x = mdates.date2num(dates.to_numpy())
     y = hours.to_numpy(dtype=float)
     line_x: list[float] = []
@@ -1747,6 +1767,7 @@ def plot_daily_running_time(
     image_format: str,
     dpi: int,
 ) -> Path:
+    _load_plotting()
     figure, axis = plt.subplots(figsize=(13, 6.5))
     figure.subplots_adjust(left=0.085, right=0.915, bottom=0.12, top=0.855)
     summed_axis = axis.twinx()
@@ -1880,6 +1901,7 @@ def plot_daily_running_time(
 def plot_daily_cache_miss_rate(
     daily: pd.DataFrame, output_dir: Path, image_format: str, dpi: int
 ) -> Path:
+    _load_plotting()
     figure, axis = plt.subplots(figsize=(13, 5.8))
     dates = daily["date"].dt.tz_localize(None)
     axis.plot(
@@ -2186,8 +2208,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("codex_usage_report"),
-        help="结果目录（默认：当前工作目录下的 codex_usage_report）。",
+        default=report_dir(),
+        help="结果目录（默认用户运行目录中的 reports；可设置 CODEX_USAGE_REPORT_DIR）。",
     )
     parser.add_argument(
         "--timezone",
@@ -2218,8 +2240,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--cache-file", type=Path,
-        default=Path(__file__).resolve().parents[1] / "codex_usage_cache.sqlite3",
-        help="缓存文件位置，默认工具目录中的 codex_usage_cache.sqlite3。",
+        default=report_cache_file(),
+        help="缓存文件位置，默认用户运行目录中的 cache/codex_usage_cache.sqlite3。",
     )
     animation_group = parser.add_mutually_exclusive_group()
     animation_group.add_argument(

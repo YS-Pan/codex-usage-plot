@@ -6,13 +6,13 @@
 
 ## 按子代理会话查询
 
-在工具根目录使用已安装依赖的 Python：
+在任意工作目录使用已安装 `codex-usage-plot[data]` 的 Python：
 
 ```sh
 python -m codex_usage query --session-id child-session-a child-session-b --model gpt-6-luna --require-match
 ```
 
-将示例 ID 换成宿主实际返回、并且已经写入本地日志的会话 ID。Windows 未激活环境时使用 `.\.venv\Scripts\python.exe`；macOS / Linux 使用 `.venv/bin/python`。工具目录是可配置的外部依赖，无需复制解析器到调用方项目。
+将示例 ID 换成宿主实际返回、并且已经写入本地日志的会话 ID。`codex-usage query` 是等价入口。基础包可以查看帮助，实际查询需 `data` extra；缺失时按错误提示运行 `setup --install data` 或安装 wheel 的 `[data]` extra。调用方配置已安装工具的 Python，无需源码目录或复制解析器。
 
 例如，对一次重排保存 `run/query/batch → session_id/turn_id` 映射，再将明确属于重排的 ID 传入。主代理编排、作答、裁判和格式修复分别登记；重试产生的新会话也要登记。仅筛选同一时间段的所有 `gpt-6-luna`，无法保证得到这次重排的用量。
 
@@ -102,7 +102,7 @@ python -m codex_usage query --ids-file rerank-usage-ids.json --output rerank-usa
 
 ## 从其他项目运行 CLI
 
-使用绝对 Python 路径，并将子进程的 `cwd` 指向工具根目录，不依赖调用方的当前目录。下面的路径应来自项目配置，清单文件由调用方准备：
+配置已安装工具的绝对 Python 路径，清单文件由调用方准备并传入绝对路径。命令可从调用方项目运行，不需要把 `cwd` 指向工具源码目录：
 
 ```python
 import json
@@ -110,13 +110,11 @@ import os
 from pathlib import Path
 import subprocess
 
-tool_root = Path(config["codex_usage_tool_dir"]).resolve()
-python = tool_root / (".venv/Scripts/python.exe" if os.name == "nt" else ".venv/bin/python")
+python = Path(config["codex_usage_python"]).resolve()
 ids_file = Path(config["usage_ids_file"]).resolve()
 completed = subprocess.run(
     [str(python), "-m", "codex_usage", "query",
      "--ids-file", str(ids_file), "--require-match"],
-    cwd=tool_root,
     capture_output=True,
     text=True,
     encoding="utf-8",
@@ -130,17 +128,14 @@ if result["schema_version"] != 1 or not result["diagnostics"]["complete"]:
 tokens = result["summary"]["total_tokens"]
 ```
 
-同时保存命令参数、完整 JSON、工具版本 / Git 提交和调用映射。外部项目不必把某个使用者的绝对工具路径写进通用内核。
+同时保存命令参数、完整 JSON、已安装工具版本和调用映射。外部项目通过自己的配置记录解释器位置，不把某个使用者的机器路径写进通用内核。查询不依赖 basePack、其他工具或源码检出。
 
 ## Python 接口
 
-调用方环境需具备本项目 `requirements.txt` 中的依赖。源码无需安装成全局包；可以将配置的工具目录加入模块搜索路径：
+在调用方使用的 Python 环境安装 `codex-usage-plot[data]`，然后直接导入：
 
 ```python
 from pathlib import Path
-import sys
-
-sys.path.insert(0, str(Path(config["codex_usage_tool_dir"]).resolve()))
 from codex_usage.query import query_usage
 
 result = query_usage(
@@ -165,6 +160,6 @@ export_query_result(result, Path(config["usage_output_dir"]))
 
 ## 缓存与并发
 
-默认不使用缓存。需要重复查询时显式指定 `--cache-file PATH --incremental`；只给 `--incremental` 时，CLI 使用工具目录下的 `codex_usage_query_cache.sqlite3`，与日常图片缓存分开。Python 调用请显式提供 `cache_path`。
+默认不使用缓存。需要重复查询时显式指定 `--cache-file PATH --incremental`；只给 `--incremental` 时，CLI 使用用户状态目录下的 `cache/codex_usage_query_cache.sqlite3`，与日常图片缓存分开。运行 `codex-usage paths` 查看实际路径；`CODEX_USAGE_STATE_DIR` 可配置状态根目录。Python 调用请显式提供 `cache_path`。既有缓存的保留或迁移见 [安装指南](installation.md#4-状态目录与旧版迁移)。
 
 缓存保存完整扫描元数据，不会因为本次只筛选一个子代理而删除其他会话。更换筛选条件可复用同一数据根的缓存；不同 `CODEX_HOME` 应分别指定缓存文件。多个进程同时查询时，分别使用缓存或采用默认无缓存扫描，避免竞争同一个 SQLite 写事务。完整扫描仍会检查数据根中的日志，筛选参数限定返回结果，不承诺只打开指定会话文件。

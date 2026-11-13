@@ -4,27 +4,27 @@
 
 ## 本地开发
 
-使用 Python 3.10 或更新版本。在仓库根目录创建隔离环境：
+使用 Python 3.10 或更新版本。选择用于开发的解释器，也可自行创建虚拟环境；以下 `python` 始终指向同一个解释器。在仓库根目录执行：
 
 ```sh
-python -m venv .venv
+python -m pip install ".[test]" build
+python -m unittest -v
+python -m build --wheel
+python -m pip install --force-reinstall --no-deps dist/codex_usage_plot-0.2.0-py3-none-any.whl
 ```
 
-Windows PowerShell：
+依赖和 extras 以 `pyproject.toml` 为准。`test` extra 包含绘图依赖及供合成 MP4 测试使用的 `imageio-ffmpeg`；生产的 `data` / `plotting` extras 不捆绑编码器。
 
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m unittest -v
-.\.venv\Scripts\python.exe -m codex_usage demo
-```
-
-macOS / Linux：
+随后切换到与源码无关的可写目录，确认 wheel 安装独立可用：
 
 ```sh
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python -m unittest -v
-.venv/bin/python -m codex_usage demo
+python -m codex_usage --help
+codex-usage paths
+codex-usage check
+codex-usage demo --output codex_usage_demo
 ```
+
+使用一个新的演示目录；不要把演示写进 README 的已跟踪图片目录。源码用于开发，普通 wheel 用于安装；每次修改后按测试、构建、重新安装、无关目录验证的顺序更新，不直接编辑 `site-packages`。源码测试可能掩盖安装文件遗漏，因此不能替代 wheel 验收。
 
 所有测试使用合成数据，不需要登录 Codex、API key 或个人日志。GitHub Actions 在 Windows / Ubuntu、Python 3.10 / 3.14 上运行测试与演示。GUI 需要带 Tcl/Tk 的桌面环境；CI 不验证窗口交互。
 

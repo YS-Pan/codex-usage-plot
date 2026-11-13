@@ -4,7 +4,7 @@
 
 ## 开发环境
 
-环境建立、依赖安装和完整测试命令见 [贡献说明](../CONTRIBUTING.md)。优先使用仓库 `.venv` 的解释器；依赖范围以 `requirements.txt` 为准。项目直接运行源码，不需要打包或安装到全局环境。
+依赖安装、测试、普通 wheel 构建与验收命令见 [贡献说明](../CONTRIBUTING.md#本地开发)。选择同一个开发解释器；依赖及 extras 以 `pyproject.toml` 为准。修改源码后运行相关测试，再构建普通 wheel、重新安装，并从无关工作目录验证；安装文件不直接编辑。
 
 CLI / 统计测试无需桌面显示；GUI 人工验收需要 Tcl/Tk 和桌面。GitHub Actions 配置覆盖 Windows / Ubuntu、Python 3.10 / 3.14，分别经过压缩支持的回退库和标准库路径；实际 CI 结果以对应运行记录为准。
 
@@ -19,7 +19,7 @@ CLI / 统计测试无需桌面显示；GUI 人工验收需要 Tcl/Tk 和桌面�
 | 动画、模型配色或 MP4 编码 | `codex_usage/animations.py`、绘图函数的固定颜色参数、`figure_sink` | `tests/test_animations.py`；检查新模型与排名反转、空白帧、跨日截断、真实 MP4 解码及失败保留旧视频；运行 demo 并查看首、中、末帧 |
 | 费用估算 | `codex_usage/cost.py` | `tests/test_codex_usage_charts.py` 中费用相关测试，以及 `tests/test_historical_costs.py`；校验未知模型、长上下文阈值、缓存写入、UTC 生效边界和各费用入口一致性 |
 | 启动、选项和错误处理 | 启动器、`codex_usage/environment.py`、`codex_usage/gui.py` | `tests/test_user_entrypoints.py`；实际启动、生成、停止以及错误后重试 |
-| 包结构、命令入口和默认路径 | `codex_usage/__main__.py`、各模块的路径常量 | `tests/test_cli.py`；无依赖帮助、参数传递、源码根目录定位和标准 unittest 自动发现 |
+| 包结构、命令入口和默认路径 | `pyproject.toml`、`codex_usage/__main__.py`、各模块的路径常量 | CLI 和打包相关测试；标准库基础入口、extras 隔离、状态路径与显式覆盖，普通 wheel 在无关目录的调用 |
 | 纯数据查询、外部项目调用和元数据清单 | `codex_usage/query.py`、`query_cli.py`、采集函数的 `inventory` | 查询 / CLI / inventory 合成测试；核对 ID 与后代、精确时间、混合模型时长、缺失诊断、缓存完整性及 JSON / CSV 编码 |
 | 纯文档文字与链接 | README、`docs/`、`dev_doc/` | 检查链接、路径、UTF-8 与 `git diff --check`，无需读取真实日志 |
 
@@ -40,7 +40,9 @@ CLI / 统计测试无需桌面显示；GUI 人工验收需要 Tcl/Tk 和桌面�
 
 ## 新手流程验收
 
-- 全新可写目录：准备 `.venv`、安装依赖、再启动；路径包含中文或空格仍能工作。
+- 独立安装：全新环境安装普通 wheel，从无关工作目录检查帮助、`paths` 和 `setup` / `check`；基础包无科学计算依赖也能查看帮助，按需安装 `data` / `plotting`。
+- 功能依赖：查询不要求 Matplotlib 或 Tk；静态图片不要求 FFmpeg；动画缺编码器时给出配置指引，GUI 单独检查 Tk 与桌面。
+- 状态迁移：保留既有设置、缓存和结果，显式复制或配置沿用位置；路径包含中文或空格仍能工作，安装与启动不自动移动旧数据。
 - 无本地日志：说明如何选目录，以及如何运行合成演示。
 - GUI 生成：设置正确传给用量脚本，费用脚本读取同一输出目录的 `events.csv`；更新中窗口可响应。
 - 取消或出错：结束当前子进程，恢复按钮，保留可读日志；再次运行可恢复。

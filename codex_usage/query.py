@@ -6,13 +6,13 @@ from collections import defaultdict
 from dataclasses import asdict, replace
 from datetime import datetime, timezone as datetime_timezone, tzinfo
 from pathlib import Path
-import subprocess
 from typing import Any, Iterable
 
 import pandas as pd
 
 from . import __version__
 from .cache import CACHE_VERSION
+from .paths import query_cache_file
 from .charts import (
     COMPOSITION_COLUMNS, RAW_TOKEN_COLUMNS, collect_usage_data, default_codex_home,
     resolve_thread_roots, resolve_timezone,
@@ -185,7 +185,7 @@ def query_usage(
     if not home.is_dir():
         raise ValueError(f"Codex 数据目录不存在：{home}")
     if incremental and cache_path is None:
-        cache_path = Path(__file__).resolve().parents[1] / "codex_usage_query_cache.sqlite3"
+        cache_path = query_cache_file()
     inventory: dict[str, Any] = {}
     all_events, all_intervals, stats = collect_usage_data(
         home, target_tz, include_archived, progress,
@@ -380,14 +380,8 @@ def query_usage(
     total = _totals(events, intervals)
     total.update(session_count=len(session_rows), turn_count=len(turn_rows),
                  thread_count=len(matched["thread_ids"]), model_count=int(events["model"].nunique()))
-    try:
-        revision = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parents[1],
-            capture_output=True, text=True, timeout=3, check=False,
-        )
-        git_revision = revision.stdout.strip() if revision.returncode == 0 else None
-    except (OSError, subprocess.TimeoutExpired):
-        git_revision = None
+    # An installed wheel is identified by its package version, not a nearby repository.
+    git_revision = None
     result = {
         "schema_version": SCHEMA_VERSION,
         "tool": {"name": "codex_usage", "version": __version__, "git_revision": git_revision, "parser_cache_version": CACHE_VERSION},

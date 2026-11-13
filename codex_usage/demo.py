@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 from .charts import collect_usage_data, export_report
 from .cost import main as estimate_cost
 from .animations import AnimationOptions
+from .paths import state_dir
 
 
 START = date(2026, 9, 14)
@@ -69,7 +70,7 @@ def write_demo_logs(home: Path) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m codex_usage demo", description="用完全合成的日志体验图片生成，不读取本机 Codex 数据。")
-    parser.add_argument("--output", type=Path, default=Path("codex_usage_demo"), help="演示结果目录，默认 codex_usage_demo。")
+    parser.add_argument("--output", type=Path, default=state_dir() / "demo", help="演示结果目录，默认用户运行目录中的 demo。")
     args = parser.parse_args(argv)
     output = args.output.expanduser().resolve()
     if output.exists() and (not output.is_dir() or (any(output.iterdir()) and not (output / "DEMO.txt").is_file())):

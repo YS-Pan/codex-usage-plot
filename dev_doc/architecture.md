@@ -4,13 +4,13 @@
 
 ## 项目边界
 
-这是直接从源码运行的本地 Python 工具。它把仍保留在本机的 Codex 日志元数据转换为图表与数据表，不依赖模型 API、账户额度接口或数据库服务。原始日志只读；SQLite 是可重建的统计缓存，CSV、JSON 和图片是生成结果。
+这是可独立安装的本地 Python 工具，发行名 `codex-usage-plot`，包名 `codex_usage`。它把仍保留在本机的 Codex 日志元数据转换为图表与数据表，不依赖模型 API、账户额度接口或数据库服务。原始日志只读；SQLite 是可重建的统计缓存，CSV、JSON 和图片是生成结果。
 
 解析时只保留允许的元数据字段，不使用或导出消息、回答、推理、工具输出正文。任务标题、工作目录、会话 ID 和活动时间仍可能出现在数据文件或缓存中，因此它们属于本地数据，不是适合随代码公开的示例。
 
 ## 模块职责
 
-实现放在 `codex_usage/` 包，测试放在 `tests/`；根目录只保留用户入口、文档和项目配置。`codex_usage/__main__.py` 是统一命令路由，按子命令延迟导入模块，因此帮助与环境准备无需先安装绘图依赖。模块间使用相对导入，从项目根目录运行 `python -m codex_usage`。
+实现放在 `codex_usage/` 包，测试放在 `tests/`；根目录保留开发入口、文档和项目配置。`codex_usage/__main__.py` 是统一命令路由，按子命令延迟导入模块；基础入口、帮助、路径和环境检查仅用标准库。`data` extra 提供查询依赖，`plotting` extra 包含数据与绘图依赖，依赖声明集中在 `pyproject.toml`。安装后可在任意目录运行 `codex-usage` 或 `python -m codex_usage`。
 
 | 文件 | 职责与主要入口 |
 | --- | --- |
@@ -22,7 +22,7 @@
 | [`codex_usage/cost.py`](../codex_usage/cost.py) | `calculate_model_event_costs` 根据 [`model_prices.py`](../codex_usage/model_prices.py) 中的历史价格逐请求计算费用，供 06 任务费用、13 逐小时费用和 14 每日费用构成复用；独立脚本读取 `events.csv`，生成累计费用与情景结果，并复用图表模块的字体、颜色和保存逻辑 |
 | [`codex_usage/thread_metadata.py`](../codex_usage/thread_metadata.py) | 在日期筛选前结合主会话开始时间、目录与本地保存的项目元数据，补齐 06 图的项目名和开始日期；项目名每次刷新，不写入原始日志 |
 | [`codex_usage/gui.py`](../codex_usage/gui.py) | `UsageApp` 管理 Tk 控件；`ReportOptions` 保存选项；`generate_reports` 在后台顺序执行两个 CLI |
-| [`codex_usage/environment.py`](../codex_usage/environment.py)、[`启动用量统计.cmd`](../启动用量统计.cmd) | 寻找 Python、创建 / 检查项目 `.venv`、安装缺失依赖并启动 GUI |
+| [`codex_usage/environment.py`](../codex_usage/environment.py)、[`启动用量统计.cmd`](../启动用量统计.cmd) | 检查当前 Python 的功能依赖；仅显式 `setup --install data\|plotting` 安装本工具 extra；Windows 启动器是可选 GUI 入口 |
 | [`codex_usage/demo.py`](../codex_usage/demo.py) | 用固定随机种子生成合成元数据，复用正式解析和导出流程生成演示 |
 | `tests/test_*.py` | 使用合成日志验证解析、统计、缓存和首次使用入口；`tests/__init__.py` 维持标准 unittest 自动发现 |
 
@@ -56,7 +56,7 @@ flowchart TD
 
 `query` 经 `query_cli.main` 调用 `query_usage`，复用 `collect_usage_data` 的普通 / 压缩读取、缓存、去重及根任务归属。采集函数的可选 `inventory` 参数补充会话头、直接父子关系和回合模型 / 推理强度元数据，包含没有 token 的会话与回合；原有三元组返回值保持兼容。这些白名单元数据也进入增量解析检查点，缓存格式由 `CACHE_VERSION` 管理。
 
-查询在完整采集后筛选，结合回合元数据关联运行区间；无法可靠按模型分摊的混合或未知回合写入诊断。结果包含版本、筛选范围、事件、会话 / 回合分组、两种时长和匹配 / 缺失信息。默认只读扫描，无缓存写入、文件导出或图片渲染；显式指定缓存或输出目录才写相应文件。查询缓存不保存某次筛选后的子集，CLI 的默认增量查询缓存为 `codex_usage_query_cache.sqlite3`。
+查询在完整采集后筛选，结合回合元数据关联运行区间；无法可靠按模型分摊的混合或未知回合写入诊断。结果包含版本、筛选范围、事件、会话 / 回合分组、两种时长和匹配 / 缺失信息。默认只读扫描，无缓存写入、文件导出或图片渲染；显式指定缓存或输出目录才写相应文件。查询缓存不保存某次筛选后的子集，CLI 显式启用增量查询时的默认缓存为 `<状态根>/cache/codex_usage_query_cache.sqlite3`，显式缓存路径继续有效。
 
 对外协议与调用示例集中在 [供其他项目调用](../docs/integration.md)，筛选与时间含义见 [纯数据查询统计约定](statistics.md#纯数据查询)。
 
@@ -66,7 +66,7 @@ flowchart TD
 
 `FrameRenderer` 提前固定模型、来源和构成配色，按日期截取事件及运行区间，调用现有聚合与绘图函数。绘图函数可接收固定颜色参数；`figure_sink` 用 `ContextVar` 临时接收 `save_figure` 的 Figure，渲染后仍关闭 Figure，既不覆盖静态图片，也不把临时逐帧图片留在目录中。每帧按固定画布尺寸等比缩放并补白，避免任务数、图例或文字变化导致视频尺寸变化。
 
-`imageio-ffmpeg` 提供 FFmpeg 路径，编码子进程通过 stdin 接收 RGB 帧，使用 H.264 / yuv420p 和 MP4 faststart。帧逐个渲染、写入，末尾复用最后一帧的 RGB 数据追加一秒静止，不重复渲染或推进日期；内存不随动画帧数增加。GIF 从该 MP4 转换，同样保留末尾停留。stderr 写入临时文件，避免管道阻塞。编码完成且退出码为 0 后，才以输出目录内的临时 MP4 替换目标；失败关闭管道、回收编码进程并清理暂存文件，保留旧视频。GUI 取消统计子进程后，编码器的输入管道也随之关闭；与静态输出一样，强制终止可能留下暂存文件。
+动画使用外部 FFmpeg：可通过 `CODEX_USAGE_FFMPEG_EXE` 指定，兼容 `IMAGEIO_FFMPEG_EXE`，也可从 PATH 或已安装的可选 `imageio-ffmpeg` 解析。生产依赖不捆绑或自动下载编码器。编码子进程通过 stdin 接收 RGB 帧，使用 H.264 / yuv420p 和 MP4 faststart。帧逐个渲染、写入，末尾复用最后一帧的 RGB 数据追加一秒静止，不重复渲染或推进日期；内存不随动画帧数增加。GIF 从该 MP4 转换，同样保留末尾停留。stderr 写入临时文件，避免管道阻塞。编码完成且退出码为 0 后，才以输出目录内的临时 MP4 替换目标；失败关闭管道、回收编码进程并清理暂存文件，保留旧视频。GUI 取消统计子进程后，编码器的输入管道也随之关闭；与静态输出一样，强制终止可能留下暂存文件。
 
 动画的日期、累计和时区定义见 [动画快照](statistics.md#动画快照)；用户入口与参数集中在 [使用指南](../docs/usage.md#动画)。
 
@@ -74,7 +74,7 @@ flowchart TD
 
 ## 增量缓存与恢复
 
-默认数据库 `codex_usage_cache.sqlite3` 位于工具目录。`metadata` 保存数据根目录等信息，`logs` 保存文件识别信息、大小 / 修改时间、已读取字节位置、检查点及解析状态；`events` 和 `intervals` 保存绘图所需的 token 记录与运行区间。数据库结构版本由 `CACHE_VERSION` 管理。
+默认图片数据库为 `<状态根>/cache/codex_usage_cache.sqlite3`，`codex-usage paths` 显示实际路径。`metadata` 保存数据根目录等信息，`logs` 保存文件识别信息、大小 / 修改时间、已读取字节位置、检查点及解析状态；`events` 和 `intervals` 保存绘图所需的 token 记录与运行区间。数据库结构版本由 `CACHE_VERSION` 管理。
 
 缓存不复制原始日志，不保存消息、回答、推理或工具输出正文。时区、日期范围、归档选项和图片格式不使缓存只剩某次筛选结果；每次绘图使用本轮选中的完整数据。13、14 图直接复用本轮筛选后的事件，独立费用脚本从生成的 `events.csv` 读取。
 
@@ -96,9 +96,9 @@ flowchart TD
 
 ## 启动与 GUI
 
-Windows 启动器优先使用工具目录的 `.venv`，其次尝试 `py -3`，最后查找 PATH 中的 Python。`codex_usage/environment.py` 用标准库准备环境，检查 Python 版本、依赖导入和最低版本、时区数据；启动 GUI 时还检查 Tkinter。环境不完整时在本项目 `.venv` 中安装 `requirements.txt`，正常时跳过安装。`--check` 只检查、不安装、不启动。
+`codex_usage/environment.py` 用标准库检查当前 Python 的所需功能：`setup` / `check` 支持 `--feature data|plotting|animation`。未指定功能时，普通检查默认动画全链路，`setup --install` 默认检查所选 extra；加 `--gui` 才检查 Tkinter。只有 `setup --install data|plotting` 显式调用同一 Python 的 pip，默认通过发行名和当前版本复用已装包的元数据；`--wheel PATH` 仅用于显式覆盖本地安装来源，不自动查找历史 wheel。普通启动不创建 `.venv`、修复 pip 或下载编码器。Windows 源码启动器是可选入口，日常可直接运行已安装命令。
 
-GUI 默认使用上海时区、包含归档并统计全部日期。`codex_usage_settings.json` 保存用户上次选择的数据目录、IANA 时区和归档选项；格式无效时恢复默认值。`report` 保留独立参数，包括日期范围、输出目录、格式等；其默认时区 `local` 是系统当前 UTC 偏移，跨夏令时日期应指定 IANA 时区。纯数据 `query` 默认使用 `UTC`，接受精确时间。
+GUI 默认使用上海时区、包含归档并统计全部日期。`<状态根>/codex_usage_settings.json` 保存用户上次选择的数据目录、IANA 时区和归档选项；格式无效时恢复默认值。`report` 保留独立参数，包括日期范围、输出目录、格式等；其默认时区 `local` 是系统当前 UTC 偏移，跨夏令时日期应指定 IANA 时区。纯数据 `query` 默认使用 `UTC`，接受精确时间。
 
 GUI 使用紧凑的原生控件布局，保留「更新图片」「打开图片文件夹」、一行状态，以及设置、日志和帮助入口。主按钮默认调用增量模式，缓存缺失时自动完整读取。数据目录、时区、归档选项及「重新完整读取」放在可折叠设置中；校验失败时自动展开设置。
 
@@ -112,8 +112,8 @@ Tk 主线程通过 `after` 消费队列。已知总数时显示当前阶段的�
 
 复用 `configure_matplotlib`、`setup_date_axis`、`format_tokens` 和 `save_figure`。`save_figure` 先在**输出目录内**渲染临时文件，再替换目标并清理临时文件，以保持 Windows 查看器的读取权限兼容。
 
-GUI 的结果路径锚定工具目录；`report` 默认输出相对当前工作目录，`query` 默认只写标准输出。CSV 使用 UTF-8 BOM，JSON 使用 UTF-8；导出日期保留时区，无定义的 JSON 比例使用 `null`。图片生成文件名、编号和字段见 [输出文件参考](../docs/reference.md)，查询文件见 [集成说明](../docs/integration.md#输出与退出码)。
+GUI 与 `report` 默认输出到 `<状态根>/reports/`，`CODEX_USAGE_REPORT_DIR` 或显式输出参数可调整；`query` 默认只写标准输出。CSV 使用 UTF-8 BOM，JSON 使用 UTF-8；导出日期保留时区，无定义的 JSON 比例使用 `null`。图片生成文件名、编号和字段见 [输出文件参考](../docs/reference.md)，查询文件见 [集成说明](../docs/integration.md#输出与退出码)。
 
-移动代码目录不改变本地数据的位置：GUI、环境准备和默认缓存都从包目录向上定位项目根目录，继续使用原来的 `.venv`、`codex_usage_report/`、`codex_usage_cache.sqlite3` 与设置文件。
+默认状态位于平台的本工具用户目录。`setup --state-dir` / `--report-dir` 将明确选择的根目录保存到本工具用户配置 `paths.json`；仅配置路径时不检查可选依赖。环境变量覆盖保存的选择，显式输出和缓存参数保持优先。程序安装、源码与状态相互独立，`paths` 返回有效路径及配置文件；旧源码目录中的设置、缓存和结果需显式复制或配置，不自动迁移，操作见 [安装指南](../docs/installation.md#4-状态目录与旧版迁移)。
 
-README 直接引用输出目录中的 `02_cumulative_tokens.png` 和 `10_daily_running_time.png`，不另建预览图片。GitHub 保留两张图片的现有版本；本地生成流程继续更新它们，后续修改按 [贡献说明](../CONTRIBUTING.md#提交内容) 排除提交与上传。其他生成文件仍由 `.gitignore` 排除。
+README 直接引用仓库 `codex_usage_report/` 中的 `02_cumulative_tokens.png` 和 `10_daily_running_time.png`，不另建预览图片。GitHub 保留两张图片的现有版本；用户可显式向原结果目录生成，后续图片修改按 [贡献说明](../CONTRIBUTING.md#提交内容) 排除提交与上传。其他生成文件仍由 `.gitignore` 排除。

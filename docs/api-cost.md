@@ -73,4 +73,4 @@ python -m codex_usage cost
 python -m codex_usage cost --events report/events.csv --output report
 ```
 
-本页命令需使用已安装项目依赖的 Python；Windows 默认虚拟环境为 `.venv/Scripts/python.exe`，macOS / Linux 为 `.venv/bin/python`。09 图固定为 PNG；13、14 图随 `report --format` 支持 PNG / SVG / PDF。
+本页命令需使用已安装 `codex-usage-plot[plotting]` 的 Python。默认读取报告目录中的 `events.csv`，实际路径见 `codex-usage paths`；显式输入和输出参数继续有效。09 图固定为 PNG；13、14 图随 `report --format` 支持 PNG / SVG / PDF。

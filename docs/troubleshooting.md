@@ -4,37 +4,39 @@
 
 ## 双击后没有窗口，或提示找不到 Python
 
-先完整解压仓库，再运行 `启动用量统计.cmd`。安装 Python 3.10 或更新版本时，选择 Tcl/Tk 并勾选 Add python.exe to PATH。启动器依次寻找项目的 `.venv`、`py -3` 和 PATH 中的 Python。
+先确认已经按 [安装指南](installation.md) 安装 wheel 的 `plotting` extra。GUI 需要 Python 3.10+、Tcl/Tk 和桌面环境；Windows 的 Python 安装程序可提供 Tcl/Tk。为已安装命令 `codex-usage gui` 创建快捷方式；源码启动器只是可选入口。
 
-让 AI agent 协助安装时，优先按 [安装指南](installation.md) 准备环境并验证，不需要自动打开窗口。也可在项目目录的 PowerShell 中运行，保留完整错误信息：
-
-```powershell
-py -3 -m codex_usage setup
-```
-
-只检查当前环境而不安装或启动：
+在终端使用安装工具的同一个 Python 运行并保留错误信息：
 
 ```powershell
-.\.venv\Scripts\python.exe -m codex_usage check
+python -m codex_usage check --gui
 ```
 
-检查通过后再次双击启动器。`check` 包含 Tkinter 检查；仅使用 CLI 的 macOS / Linux 用户可以用 `setup` 和合成 `demo` 验证，无需安装 Tkinter。
-
-若 `.venv` 来自另一台机器、已损坏或 Python 卸载后不可用，关闭 GUI，将 `.venv` 重命名为一个未占用的备份目录（如 `.venv-old`），再运行 `py -3 -m codex_usage setup`。虚拟环境不能直接复制到其他机器使用；重新创建不会修改本地 Codex 原始日志。
+`setup` / `check` 只检查；`--gui` 才额外检查 Tkinter。仅查询使用 `check --feature data`，静态图片使用 `check --feature plotting`，均无需 Tk。命令不在 PATH 时使用该 Python 的绝对路径加 `-m codex_usage`；不要改用另一个未安装工具的 Python。
 
 ## 安装依赖失败，或提示 ModuleNotFoundError
 
-首次安装需要可访问 Python 包索引的网络。查看启动窗口中的具体报错，恢复网络后重新双击即可；启动器只在项目的 `.venv` 安装依赖。
+安装 Python 依赖需要可访问包索引的网络。工具启动时不会自动创建环境、安装依赖或修复 pip；失败时查看具体报错，并用实际运行工具的同一个 Python 显式安装所需 extra。
 
-手动修复请使用**实际运行工具的同一个 Python**，例如：
+例如，图片或 GUI 安装：
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+python -m codex_usage setup --install plotting
 ```
 
-macOS / Linux 使用 `.venv/bin/python -m pip install -r requirements.txt`。不要将依赖安装到一个 Python，却用另一个 Python 启动。
+仅查询把 `plotting` 换成 `data`。默认复用已装同版本包的依赖元数据，不需要初次安装的 wheel；需要覆盖来源时可按 [安装指南](installation.md#2-安装-wheel) 显式指定本地 wheel。若 Python 环境本身损坏，由使用者修复或重新选择解释器并安装 wheel；原有状态目录与结果可保留。
 
-如果提示 `tkinter`，请通过 Python 安装程序或系统包管理器补装 Tcl/Tk；它不是用 pip 安装的包。Linux 的 `venv` / `ensurepip` 也可能需要系统单独提供。仅使用 CLI 时不需要 Tkinter。
+如果提示 `tkinter`，请通过 Python 安装程序或系统包管理器补装 Tcl/Tk；它不是用 pip 安装的包。
+
+## 找不到 FFmpeg，或无法生成动画
+
+`plotting` extra 提供图片依赖，动画编码器由外部提供。安装支持 H.264 的 FFmpeg 并加入 PATH，或设置 `CODEX_USAGE_FFMPEG_EXE` 为完整可执行文件路径；兼容 `IMAGEIO_FFMPEG_EXE` 和已安装的可选 `imageio-ffmpeg`。运行 `codex-usage check --feature animation` 查看错误，工具不会自动下载编码器。
+
+只需静态图片时运行 `codex-usage report --no-animations`。GUI 默认生成图 2 的 MP4，因此完整 GUI 更新仍需 FFmpeg。
+
+## 升级后看不到旧设置或结果
+
+运行 `codex-usage paths` 查看当前状态、设置、缓存和结果路径。新版默认使用工具用户目录，旧版源码目录中的文件不会自动导入、移动或删除。按 [迁移步骤](installation.md#4-状态目录与旧版迁移) 复制需沿用的设置、缓存，或显式配置已有结果目录。先保留双方文件，不要用重新生成替代需要保留的旧结果。
 
 ## 提示没有日志，或者数据目录不存在
 
@@ -48,7 +50,7 @@ GUI 中展开「设置」，点击数据目录旁的「浏览…」，选择**�
 
 检查 `sessions` 和 `archived_sessions` 是否有较早的 `.jsonl.zst` 文件。旧版只搜索普通 JSONL，会漏掉压缩后的历史记录。更新工具和依赖后，展开「设置」并点击「重新完整读取」，无需手工解压。
 
-Python 3.14+ 使用标准库 `compression.zstd`；较早版本通过 requirements.txt 安装 `backports.zstd`。如果原始历史日志已被清理，需自行从备份恢复；缓存只反映本机仍保留的日志。
+Python 3.14+ 使用标准库 `compression.zstd`；较早版本由 `data` / `plotting` extra 安装 `backports.zstd`。如果原始历史日志已被清理，需自行从备份恢复；缓存只反映本机仍保留的日志。
 
 ## 结果目录中没有图表，或更新看起来很慢
 
@@ -58,7 +60,7 @@ Python 3.14+ 使用标准库 `compression.zstd`；较早版本通过 requirement
 
 ## 更新失败，或费用估算失败
 
-在 GUI 点击「运行日志」，查看 `codex_usage_report/gui_run.log`。每次更新都会覆盖该文件。确认项目目录可写、磁盘有空间；若其他软件占用了输出文件，请关闭文件后重试。
+在 GUI 点击「运行日志」，查看报告目录的 `gui_run.log`，实际报告目录见 `codex-usage paths`。每次更新都会覆盖该文件。确认状态和报告目录可写、磁盘有空间；若其他软件占用了输出文件，请关闭文件后重试。
 
 仅费用步骤失败时，用量图表可能已经完成。命令行费用计算需要先生成 `events.csv`，自定义路径示例：
 

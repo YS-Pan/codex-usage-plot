@@ -4,7 +4,7 @@
 
 ## 图形界面
 
-安装通常只需进行一次，可以交给 AI agent 按 [安装指南](installation.md) 完成。日常双击 Windows 的 `启动用量统计.cmd`，或在装好依赖的环境运行 `python -m codex_usage gui`。
+安装通常只需进行一次，可以交给 AI agent 按 [安装指南](installation.md) 完成。日常运行 `codex-usage gui`，也可为它创建快捷方式。`python -m codex_usage gui` 保留等价入口；使用已安装 `plotting` extra 且带 Tcl/Tk 的同一个 Python。
 
 1. 点击 **「更新图片」**：首次自动完整读取以建立缓存，之后复用未变化的日志。图片每次都会重新生成。
 2. 更新完成后点击 **「打开图片文件夹」**，在其中选择需要的图片、MP4 动画、CSV 或汇总文件。默认只额外生成图 2 的动画。
@@ -18,28 +18,28 @@
 | 包含归档 | 默认勾选，同时统计 `archived_sessions` 中仍保留的日志。 |
 | 重新完整读取 | 重新核对所有历史文件，同时刷新缓存；怀疑缓存或统计异常时使用。日常点击主界面的「更新图片」即可。 |
 
-设置在开始更新时保存到工具目录下的 `codex_usage_settings.json`，下次自动恢复。删除该文件可恢复默认设置。它包含本机路径，默认不会被 Git 提交。
+设置在开始更新时保存到用户状态目录的 `codex_usage_settings.json`，下次自动恢复。运行 `codex-usage paths` 查看实际路径。需要恢复默认值时先保留旧文件，再移走设置文件；其中包含本机路径。
 
-结果始终位于工具目录的 `codex_usage_report/`，从快捷方式或其他工作目录启动也一样。更新期间设置和更新按钮禁用；耗时工作在后台子进程执行，窗口可响应。
+结果默认位于状态目录的 `reports/`，从快捷方式或其他工作目录启动也一样。可用 `setup --state-dir PATH --report-dir PATH` 保存目录选择，环境变量 `CODEX_USAGE_STATE_DIR` / `CODEX_USAGE_REPORT_DIR` 可覆盖；旧设置、缓存和结果的沿用步骤见 [安装与迁移](installation.md#4-状态目录与旧版迁移)。更新期间设置和更新按钮禁用；耗时工作在后台子进程执行，窗口可响应。
 
 更新期间显示当前阶段、实际完成数量和已用时间：扫描按文件计数，并列出缓存复用、新增、续读和重建数量；图片按成功保存的张数计数；动画按已交给编码器的日期帧计数。进度条和百分比只表示**当前阶段**，进入下一阶段时重新计数，不代表整次更新的耗时比例。汇总、保存动画等无法提前确定工作量的阶段显示活动指示和已用时间；帧全部完成后仍需等待动画保存成功。
 
-点击「停止」可取消，关闭更新中的窗口也会询问是否停止。取消或失败可能留下部分已更新文件，重新生成即可。底部「运行日志」打开 `codex_usage_report/gui_run.log`，每次更新覆盖；「使用说明」打开本指南。只记录运行时间而没有 token 时，部分用量图不会生成，图片总数随实际任务调整。
+点击「停止」可取消，关闭更新中的窗口也会询问是否停止。取消或失败可能留下部分已更新文件，重新生成即可。底部「运行日志」打开结果目录的 `gui_run.log`，每次更新覆盖；「使用说明」显示操作提示。只记录运行时间而没有 token 时，部分用量图不会生成，图片总数随实际任务调整。
 
 ## 命令行
 
-在项目根目录通过 `python -m codex_usage` 运行。旧版根目录脚本已归入 `codex_usage/` 包；原用量、费用和 GUI 入口分别改为 `report`、`cost`、`gui` 子命令，原有统计参数继续跟在子命令后。
+安装后可在任意目录运行 `codex-usage` 或 `python -m codex_usage`。用量、费用和 GUI 入口分别为 `report`、`cost`、`gui` 子命令，统计参数跟在子命令后。
 
 其他项目需要按子代理会话、回合或模型取得 token 数据时，使用 `python -m codex_usage query`。它默认只向标准输出返回 JSON；筛选、CSV、Python 接口和自动化调用示例见 [供其他项目调用](integration.md)。本节其余参数与默认值说明针对图片生成命令 `report`。
 
-以下示例使用已安装依赖的 `python`。若未激活环境，Windows 将其替换为 `.\.venv\Scripts\python.exe`，macOS / Linux 替换为 `.venv/bin/python`。
+以下示例中的 `python` 必须是安装本工具及所需 extra 的解释器；有多个 Python 时使用其绝对路径。
 
 ```sh
 python -m codex_usage report --timezone Asia/Shanghai --incremental
 python -m codex_usage cost
 ```
 
-`report` 的数据目录默认读取 `CODEX_HOME` 或 `~/.codex`；输出目录默认是**当前工作目录**下的 `codex_usage_report`。`report` 的时区默认 `local`，表示系统当前 UTC 偏移；统计跨夏令时日期时请明确指定 IANA 时区。
+`report` 的数据目录默认读取 `CODEX_HOME` 或 `~/.codex`；输出目录默认是 `paths` 显示的报告目录。显式 `--output` 优先，相对路径以当前工作目录为准。`report` 的时区默认 `local`，表示系统当前 UTC 偏移；统计跨夏令时日期时请明确指定 IANA 时区。
 
 指定目录与日期（首尾日期均包含）：
 
@@ -61,7 +61,7 @@ python -m codex_usage cost --events report/events.csv --output report
 | `--dpi NUMBER` | 图片 DPI，默认 160 |
 | `--top-threads NUMBER` | 任务排行数量，默认 15 |
 | `--incremental` | 增量扫描，缓存缺失时自动完整读取 |
-| `--cache-file PATH` | 缓存位置，默认工具目录中的 `codex_usage_cache.sqlite3` |
+| `--cache-file PATH` | 缓存位置，默认状态目录中的 `cache/codex_usage_cache.sqlite3` |
 | `--quiet` | 隐藏扫描、图片和动画等过程进度，保留最终摘要与错误；`cost` 和 `animate` 也支持 |
 | `--animations NUMBER ...` | 需要生成动画的图片编号，默认仅 `2`；例如 `--animations 2 6` |
 | `--no-animations` | 本次只更新静态图片和数据文件，不生成动画 |
@@ -97,11 +97,11 @@ python -m codex_usage report --timezone Asia/Shanghai --incremental --no-animati
 
 动画按日显示截至该日的统计，起始日前的累计量保留；空闲日也显示，最后一天只使用当前时刻已记录的数据。图 2 的横、纵坐标轴随每帧的日期和累计量缩放。整个动画预先固定模型颜色及堆叠顺序，与对应静态图片配色一致。详细口径见 [动画快照](../dev_doc/statistics.md#动画快照)。选择不生成某个动画时，目录中以前生成的 MP4 会保留。
 
-MP4 使用 H.264 编码。动画依赖随 `requirements.txt` 安装，常见平台无需另行配置 FFmpeg；旧环境运行 `python -m codex_usage setup` 补齐依赖。生成失败会保留同名旧动画，错误显示在终端或 GUI 运行日志中。
+MP4 使用 H.264 编码。安装 `plotting` extra 后，还需自行安装 FFmpeg 并加入 PATH，或设置 `CODEX_USAGE_FFMPEG_EXE`；兼容 `IMAGEIO_FFMPEG_EXE` 和已安装的可选 `imageio-ffmpeg`。用 `codex-usage check --feature animation` 检查；工具不自动下载编码器。缺失时按错误指引配置，或用 `report --no-animations` 生成静态图片。生成失败会保留同名旧动画，错误显示在终端或 GUI 运行日志中。
 
 ## 增量缓存
 
-默认缓存为工具目录下的 `codex_usage_cache.sqlite3`。首次自动建立，以后复用未变化的日志；普通 JSONL 追加时继续读取，压缩日志变化时重新读取该文件。图表仍会使用全部选中数据重新绘制。
+默认图片缓存为状态目录下的 `cache/codex_usage_cache.sqlite3`。首次增量读取时自动建立，以后复用未变化的日志；普通 JSONL 追加时继续读取，压缩日志变化时重新读取该文件。图表仍会使用全部选中数据重新绘制。纯数据查询默认不建缓存；其显式增量缓存与图片缓存分开。
 
 怀疑统计异常时，展开「设置」并点击「重新完整读取」核对历史。缓存损坏或格式过期会保留旧文件并重新建立。切换数据目录会重建缓存；长期统计多个目录时，可通过 CLI 的 `--cache-file` 为它们分别指定缓存。
 
@@ -109,14 +109,12 @@ MP4 使用 H.264 编码。动画依赖随 `requirements.txt` 安装，常见平�
 
 ## 合成演示与安装验证
 
-没有本地日志也能验证图片生成。依赖准备好后，在项目根目录运行：
+没有本地日志也能验证图片生成。安装 `plotting` extra 并准备 FFmpeg 后，在任意可写目录运行：
 
 ```sh
-python -m codex_usage demo
+python -m codex_usage demo --output codex_usage_demo
 ```
 
-未激活环境时，Windows 使用 `.\.venv\Scripts\python.exe -m codex_usage demo`，macOS / Linux 使用 `.venv/bin/python -m codex_usage demo`。
-
-演示会在 `codex_usage_demo/` 生成全部图片、图 2 的 MP4 和数据表，使用固定的合成会话、时间与 token 计数。演示动画以合成数据的结束日期为终点，不随运行日期变化。它不读取真实 Codex 目录，也不改动正式输出或统计缓存。重复运行可刷新演示；自定义位置使用 `--output` 指定空目录。
+上述命令在当前目录的 `codex_usage_demo/` 生成全部图片、图 2 的 MP4 和数据表；省略 `--output` 时使用状态目录中的 `demo/`。演示使用固定的合成会话、时间与 token 计数，动画以合成数据的结束日期为终点，不随运行日期变化。它不读取真实 Codex 目录，也不改动正式输出或统计缓存。重复运行可刷新演示；自定义位置使用 `--output` 指定空目录。
 
 README 的公开预览来自作者的真实聚合统计，`demo` 的输出则专门用于体验、安装验证和开发测试。

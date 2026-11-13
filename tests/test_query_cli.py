@@ -13,6 +13,7 @@ import unittest
 from unittest.mock import patch
 
 from codex_usage.__main__ import main as route
+from codex_usage.paths import query_cache_file
 from codex_usage.query_cli import TABLE_COLUMNS, _stdout_utf8, export_query_result, main
 
 
@@ -108,7 +109,7 @@ class QueryCommandLineTests(unittest.TestCase):
     def test_incremental_cache_is_separate_from_report_cache(self):
         code, _output, _errors, queried = self.invoke(["--incremental"])
         self.assertEqual(code, 0)
-        self.assertEqual(queried.call_args.kwargs["cache_path"], ROOT / "codex_usage_query_cache.sqlite3")
+        self.assertEqual(queried.call_args.kwargs["cache_path"], query_cache_file())
 
     def test_output_contains_json_and_bom_csv_with_nested_values(self):
         destination = self.root / "output"

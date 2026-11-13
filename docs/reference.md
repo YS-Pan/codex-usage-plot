@@ -2,9 +2,11 @@
 
 [返回首页](../README.md) · [使用指南](usage.md) · [统计与数据约定](../dev_doc/statistics.md)
 
-GUI 会顺序生成用量与费用图片，并导出数据文件。CLI 需分别运行两个脚本。以下图片默认使用 PNG；`report` 可通过 `--format` 切换 SVG / PDF，包括 13、14 图；费用脚本单独生成的 09 图固定为 PNG。
+GUI 会顺序生成用量与费用图片，并导出数据文件。CLI 需分别运行 `report` 和 `cost`。以下图片默认使用 PNG；`report` 可通过 `--format` 切换 SVG / PDF，包括 13、14 图；`cost` 单独生成的 09 图固定为 PNG。
 
 本页记录 `report` / `cost` 的输出。纯数据 `query` 的 JSON 协议和 CSV 数据文件见 [供其他项目调用](integration.md#输出与退出码)。
+
+默认输出到 `codex-usage paths` 显示的报告目录，即用户状态目录的 `reports/`；可用 `CODEX_USAGE_REPORT_DIR` 或显式 `--output` 调整。README 保留的 `codex_usage_report/` 媒体是仓库预览，不是安装包的默认结果位置。
 
 ## 输出
 

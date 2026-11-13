@@ -19,7 +19,7 @@
 | 位置 | 维护什么 |
 | --- | --- |
 | [根 README](../README.md) | 直接引用输出目录中的真实用量图片，简述用途、日常操作和安装入口 |
-| `docs/installation.md` | 给 AI agent 的源码获取、环境准备、合成验证和用户交接步骤 |
+| `docs/installation.md` | 给 AI agent 的独立包安装、功能依赖选择、状态迁移、合成验证和用户交接步骤 |
 | `docs/usage.md`、`docs/troubleshooting.md` | 用户操作、参数和排错步骤 |
 | `docs/integration.md` | 供其他项目调用的 query CLI / Python 接口、返回数据与退出码 |
 | `docs/reference.md`、`docs/api-cost.md` | 输出文件、字段说明、价格来源与费用假设，供用户和开发者共用 |

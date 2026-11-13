@@ -9,13 +9,13 @@ from io import BytesIO
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import tempfile
 from typing import Any, Iterable
 
 # Select the noninteractive backend before importing pyplot.
 from . import charts
+charts._load_plotting()
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import to_hex
@@ -25,6 +25,7 @@ from PIL import Image, ImageOps
 
 from .running_time import RunningInterval, aggregate_daily_running_time, local_midnight
 from .progress import ProgressReporter, report_progress
+from .paths import report_dir
 
 
 CHART_NAMES = {
@@ -74,20 +75,8 @@ def snapshot_data(
 
 
 def ffmpeg_executable() -> str:
-    try:
-        import imageio_ffmpeg
-    except ModuleNotFoundError:
-        executable = shutil.which("ffmpeg")
-        if executable:
-            return executable
-        raise RuntimeError(
-            "找不到 MP4 编码器。请运行 python -m codex_usage setup 安装动画依赖，"
-            "或使用 report --no-animations 仅更新图片。"
-        ) from None
-    try:
-        return imageio_ffmpeg.get_ffmpeg_exe()
-    except RuntimeError as exc:
-        raise RuntimeError("找不到 MP4 编码器，请重新运行 python -m codex_usage setup。") from exc
+    from .encoders import ffmpeg_executable as locate
+    return locate()
 
 
 def write_mp4(
@@ -368,7 +357,7 @@ def read_report(directory: Path) -> tuple[pd.DataFrame, list[RunningInterval], d
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m codex_usage animate", description="从已有数据文件按编号生成 MP4 动画，可同时导出 GIF，不重新扫描日志或更新静态图片。")
     parser.add_argument("--chart", type=int, nargs="+", choices=range(1, 15), required=True, metavar="NUMBER", help="图片编号，例如 --chart 6 或 --chart 2 8。")
-    parser.add_argument("--output", type=Path, default=Path("codex_usage_report"), help="已有 summary.json、events.csv 所在的结果目录，也是动画输出目录。")
+    parser.add_argument("--output", type=Path, default=report_dir(), help="已有 summary.json、events.csv 所在的结果目录，也是动画输出目录。")
     parser.add_argument("--start", help="第一帧本地日期，YYYY-MM-DD；默认结束日期的 30 天前。")
     parser.add_argument("--end", help="最后一帧本地日期，YYYY-MM-DD；默认今天。")
     parser.add_argument("--fps", type=int, default=4, help="每秒帧数，默认 4。")

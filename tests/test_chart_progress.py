@@ -5,6 +5,7 @@ from datetime import date
 import io
 import json
 import os
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -142,13 +143,19 @@ class ChartProgressTests(unittest.TestCase):
         self.assertNotIn("summary", [event.stage for event in emitted])
         export_animations.assert_not_called()
 
-    def test_quiet_cli_suppresses_all_progress_and_passes_quiet_to_animation(self):
+    def test_quiet_cli_hides_progress_keeps_diagnostics_and_passes_quiet_to_animation(self):
+        def picture_with_diagnostic(*args, **kwargs):
+            print("synthetic diagnostic", file=sys.stderr)
+            return self.output / "01_daily_tokens.png"
+
         with ExitStack() as stack, redirect_stderr(io.StringIO()) as errors, redirect_stdout(io.StringIO()):
             export_animations = self.mock_plots(stack)
+            stack.enter_context(patch.object(charts, "plot_daily_usage", side_effect=picture_with_diagnostic))
             result = charts.main(["--codex-home", str(self.home), "--output", str(self.output),
                                   "--cache-file", str(self.cache), "--timezone", "UTC", "--quiet"])
         self.assertEqual(result, 0)
-        self.assertEqual(errors.getvalue(), "")
+        self.assertEqual(self.progress_events(errors), [])
+        self.assertIn("synthetic diagnostic", errors.getvalue())
         self.assertFalse(export_animations.call_args.kwargs["progress"])
 
 
