@@ -18,7 +18,7 @@
 
 | 位置 | 维护什么 |
 | --- | --- |
-| [根 README](../README.md) | 直接引用输出目录中的真实用量图片，简述用途、日常操作和安装入口 |
+| [根 README](../README.md) | 引用 docs/assets/ 中固定展示的真实用量媒体，简述用途、日常操作和安装入口 |
 | `docs/installation.md` | 给 AI agent 的独立包安装、功能依赖选择、状态迁移、合成验证和用户交接步骤 |
 | `docs/usage.md`、`docs/troubleshooting.md` | 用户操作、参数和排错步骤 |
 | `docs/integration.md` | 供其他项目调用的 query CLI / Python 接口、返回数据与退出码 |
@@ -42,3 +42,7 @@
 | API 单价、核实日期、长上下文与情景假设 | `docs/api-cost.md` |
 
 这些内容从原 README 拆出后继续保留，不需要在首页重复展开。开发环境与提交方式仍从 [贡献说明](../CONTRIBUTING.md) 进入。
+
+## 执行任务
+
+- [2026-11-15 目录与运行行为整改](tasks/20261115-runtime-layout/progress.md)：可移植的运行目录规则、展示媒体迁移及缓存研究结论。

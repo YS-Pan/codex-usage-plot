@@ -135,6 +135,7 @@ def _cost(events: pd.DataFrame) -> dict[str, Any]:
         "models": rows,
         "assumptions": [
             "Estimate using this tool's recorded API prices and long-context rules; not an actual bill.",
+            "Estimates use Standard rates and 30-minute cache-write pricing where applicable.",
             "Prices are selected for each event by its UTC timestamp; the baseline covers earlier or unavailable timestamps.",
             "Unknown models, missing input/output breakdowns and tool-call charges are not priced.",
             "Cached input is a subset of input; reasoning output is a subset of output.",

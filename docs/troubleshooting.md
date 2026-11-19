@@ -4,7 +4,7 @@
 
 ## 双击后没有窗口，或提示找不到 Python
 
-先确认已经按 [安装指南](installation.md) 安装 wheel 的 `plotting` extra。GUI 需要 Python 3.10+、Tcl/Tk 和桌面环境；Windows 的 Python 安装程序可提供 Tcl/Tk。为已安装命令 `codex-usage gui` 创建快捷方式；源码启动器只是可选入口。
+先确认已经按 [安装指南](installation.md) 安装 wheel 的 `plotting` extra。GUI 需要 Python 3.10+、Tcl/Tk 和桌面环境；Windows 的 Python 安装程序可提供 Tcl/Tk。可为已安装命令 `codex-usage gui` 创建快捷方式，或使用复制到运行文件夹的 `启动用量统计.cmd`。脚本需要所选 Python 同目录的 `pythonw.exe`；可用 `CODEX_USAGE_PYTHON` 指定已安装本工具的 `python.exe`。报错时保留原错，用同一解释器检查和修复；启动器不自动安装或切换环境。
 
 在终端使用安装工具的同一个 Python 运行并保留错误信息：
 
@@ -36,7 +36,7 @@ python -m codex_usage setup --install plotting
 
 ## 升级后看不到旧设置或结果
 
-运行 `codex-usage paths` 查看当前状态、设置、缓存和结果路径。新版默认使用工具用户目录，旧版源码目录中的文件不会自动导入、移动或删除。按 [迁移步骤](installation.md#4-状态目录与旧版迁移) 复制需沿用的设置、缓存，或显式配置已有结果目录。先保留双方文件，不要用重新生成替代需要保留的旧结果。
+直接运行命令时，`codex-usage paths` 可查看当前状态、设置、缓存和结果路径：报告默认随当前目录，缓存使用平台用户缓存，保存的目录选择和环境变量可覆盖默认值。cmd 运行时使用脚本所在文件夹中的设置、`cache/` 和 `reports/`，不会修改全局路径偏好；独立运行 `paths` 不继承脚本结束后的局部环境。只复制 cmd 不会自动带走原数据，旧版源码目录中的文件也不会自动导入、移动或删除。按 [迁移步骤](installation.md#4-状态目录与旧版迁移) 核对并复制需沿用的设置、有效缓存，或显式配置已有结果目录，避免改路径后从头重扫。先保留双方文件，不要用重新生成替代需要保留的旧结果。
 
 ## 提示没有日志，或者数据目录不存在
 

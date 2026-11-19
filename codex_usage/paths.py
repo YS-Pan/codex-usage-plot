@@ -70,19 +70,36 @@ def state_dir() -> Path:
 
 def report_dir() -> Path:
     configured = os.environ.get("CODEX_USAGE_REPORT_DIR") or load_config().get("report_dir")
-    return Path(configured).expanduser().resolve() if configured else state_dir() / "reports"
+    return Path(configured).expanduser().resolve() if configured else Path.cwd() / "codex_usage_report"
 
 
 def settings_file() -> Path:
     return state_dir() / "codex_usage_settings.json"
 
 
+def cache_dir() -> Path:
+    """Reuse user caches unless an explicit state root selects its own cache."""
+    configured = os.environ.get("CODEX_USAGE_STATE_DIR") or load_config().get("state_dir")
+    if configured:
+        return Path(configured).expanduser().resolve() / "cache"
+    if sys.platform == "win32":
+        root = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local")
+        relative = "codex-usage/cache"
+    elif sys.platform == "darwin":
+        root = Path.home() / "Library/Caches"
+        relative = "codex-usage"
+    else:
+        root = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+        relative = "codex-usage"
+    return (root / relative).expanduser().resolve()
+
+
 def report_cache_file() -> Path:
-    return state_dir() / "cache/codex_usage_cache.sqlite3"
+    return cache_dir() / "codex_usage_cache.sqlite3"
 
 
 def query_cache_file() -> Path:
-    return state_dir() / "cache/codex_usage_query_cache.sqlite3"
+    return cache_dir() / "codex_usage_query_cache.sqlite3"
 
 
 def main(argv: list[str] | None = None) -> int:

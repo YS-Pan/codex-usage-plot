@@ -10,7 +10,7 @@
 python -m pip install ".[test]" build
 python -m unittest -v
 python -m build --wheel
-python -m pip install --force-reinstall --no-deps dist/codex_usage_plot-0.2.0-py3-none-any.whl
+python -m pip install --force-reinstall --no-deps dist/codex_usage_plot-0.2.1-py3-none-any.whl
 ```
 
 依赖和 extras 以 `pyproject.toml` 为准。`test` extra 包含绘图依赖及供合成 MP4 测试使用的 `imageio-ffmpeg`；生产的 `data` / `plotting` extras 不捆绑编码器。
@@ -26,6 +26,8 @@ codex-usage demo --output codex_usage_demo
 
 使用一个新的演示目录；不要把演示写进 README 的已跟踪图片目录。源码用于开发，普通 wheel 用于安装；每次修改后按测试、构建、重新安装、无关目录验证的顺序更新，不直接编辑 `site-packages`。源码测试可能掩盖安装文件遗漏，因此不能替代 wheel 验收。
 
+根目录 `启动用量统计.cmd` 是可复制启动器的唯一维护源；运行副本放在使用者选择的目录，更新时从维护源同步。脚本同目录的 `reports/`、`cache/`、设置和其他运行产物均不进入 Git。开发临时目录 `.task-tmp/` 可按需重建；`requirements.txt` 是 `.[test]` 的安装入口，依赖声明仍以 `pyproject.toml` 为准。
+
 所有测试使用合成数据，不需要登录 Codex、API key 或个人日志。GitHub Actions 在 Windows / Ubuntu、Python 3.10 / 3.14 上运行测试与演示。GUI 需要带 Tcl/Tk 的桌面环境；CI 不验证窗口交互。
 
 ## 改动范围与验证
@@ -39,20 +41,22 @@ codex-usage demo --output codex_usage_demo
 
 ## 提交内容
 
-README 直接引用 `codex_usage_report/` 中的 `02_cumulative_tokens.png` 和 `10_daily_running_time.png`。GitHub 保留现有图片作为历史预览；本地仍通过正常生成流程更新，不另建预览图片或复制到其他目录。
+README 展示媒体固定保存在 `docs/assets/`：`02_cumulative_tokens.png`、`10_daily_running_time.png` 及图 2 的 MP4、GIF。GitHub 保留现有图片作为历史展示；日常图片、动画和数据文件继续生成到有效报告目录，与展示媒体分开，不新增预览生成脚本。
 
 **以后不再提交或上传这两张图片的更新**，包括普通 Git push 和 GitHub 插件提交，也不再反复询问上传授权。原因是减少自动审批带来的操作负担；作者明确表示原因并非图片内容敏感。
 
 这两张图片已经被 Git 跟踪，`.gitignore` 无法屏蔽它们的修改。暂存代码和文档时显式排除图片，例如下面的命令适用于 PowerShell 和常见 shell：
 
 ```sh
-git add -A -- . ':(exclude)codex_usage_report/02_cumulative_tokens.png' ':(exclude)codex_usage_report/10_daily_running_time.png'
+git add -A -- . ':(exclude)docs/assets/02_cumulative_tokens.png' ':(exclude)docs/assets/10_daily_running_time.png'
 git diff --cached --name-only
 ```
 
 提交前确认暂存区不含这两个路径；通过 GitHub 插件提交时同样从文件或 tree 清单中排除。图片的本地修改可以继续保留在工作区。
 
-`codex_usage_report/02_cumulative_tokens.mp4` 和 `codex_usage_report/02_cumulative_tokens.gif` 作为 README 的动画示例一同跟踪。两张 PNG 的后续修改继续按上述约定排除。`.gitignore` 排除其余默认输出、演示输出、本地设置、虚拟环境、JSONL 日志和 SQLite 缓存。自定义输出目录仍需自行检查。提交前运行 `git status --short` 和 `git diff --check`，确认文件清单符合上述约定。
+2026-11-15 的目录整改允许四件展示媒体从旧 `codex_usage_report/` 纯路径迁移至 `docs/assets/`：以实施前 HEAD 中各文件的 blob 为基线，核验新路径字节相等后，显式暂存旧路径删除和新路径添加。这是路径迁移的例外；两张 PNG 的后续内容更新继续排除。迁移核验见 [目录与运行行为整改](dev_doc/tasks/20261115-runtime-layout/progress.md#展示媒体)。
+
+`docs/assets/02_cumulative_tokens.mp4` 和 `docs/assets/02_cumulative_tokens.gif` 作为 README 的动画示例一同跟踪。`.gitignore` 排除根 `private/`、默认报告、脚本运行目录的 `reports/` / `cache/`、演示输出、本地设置、虚拟环境、JSONL 日志和 SQLite 缓存。自定义输出目录仍需自行检查。提交前运行 `git status --short` 和 `git diff --check`，确认文件清单符合上述约定。
 
 输出文件虽然不包含消息正文，仍可能含有任务标题、工作目录、会话 ID 和活动时间。反馈问题时只附必要且已脱敏的错误片段，优先提供合成日志复现；不要直接上传真实 `events.csv`、缓存数据库或 rollout 日志。
 

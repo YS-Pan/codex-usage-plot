@@ -11,7 +11,6 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from codex_usage.cache import CACHE_VERSION
 from codex_usage.charts import collect_usage_data
 
 
@@ -182,12 +181,14 @@ class UsageInventoryTests(unittest.TestCase):
             "subagent": {"thread_spawn": {"parent_thread_id": "main", "parent_turn_id": "parent-turn"}},
         })
 
-    def test_old_cache_rebuilds_inventory_and_removed_logs_are_not_retained(self):
+    def test_pre_inventory_cache_rebuilds_inventory_and_removed_logs_are_not_retained(self):
         path = self.write("one.jsonl", [event("session_meta", id="main"),
                                         event("event_msg", type="task_started", turn_id="turn")])
         _, expected = self.read(cached=True)
         with closing(sqlite3.connect(self.cache)) as connection:
-            connection.execute(f"PRAGMA user_version = {CACHE_VERSION - 1}")
+            # Version 2 predates the inventory checkpoint; v3 is the current
+            # supported format and must not be treated as unsupported.
+            connection.execute("PRAGMA user_version = 2")
         _, rebuilt = self.read(cached=True)
         self.assertEqual(rebuilt, expected)
         self.assertEqual(len(list(self.root.glob("usage.sqlite3.invalid-*.bak"))), 1)

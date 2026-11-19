@@ -6,6 +6,8 @@
 
 README 首先面向决定是否安装的用户，优先展示真实用量图片；安装和环境准备面向 AI agent，步骤集中在 `docs/installation.md`；日常使用面向手动打开 GUI 的用户，主操作为增量「更新图片」。面向用户统一使用「图片」称呼，CSV / JSON 称为数据文件；保留既有命令与文件名。开发参考从 [dev_doc/README.md](dev_doc/README.md) 进入，详细技术说明维护在对应专题中。
 
+本机部署、路径或实测记录放在根 `private/`，由独立本地 Git 保存。处理本机运行副本、归档或历史实测时，若存在则查阅 `private/README.md`。公开文档、安装和测试独立可用。
+
 - `codex_usage/charts.py`：流式解析 rollout JSONL 元数据，聚合 token 用量，导出图表、CSV 和 `summary.json`。
 - `codex_usage/query.py`、`codex_usage/query_cli.py`：供其他项目调用的纯数据查询，默认 JSON 标准输出；接口与返回协议见 [集成说明](docs/integration.md)。
 - `codex_usage/animations.py`、`tests/test_animations.py`：按日期重放图片并生成 MP4；默认仅生成 02 动画，其余编号按需生成，整个动画固定模型颜色。
@@ -16,9 +18,9 @@ README 首先面向决定是否安装的用户，优先展示真实用量图片�
 - `tests/test_codex_usage_charts.py`、`tests/test_codex_running_time.py`：基于合成数据的 unittest 测试。
 - `tests/test_codex_usage_cache.py`、`tests/test_user_entrypoints.py`：增量缓存及启动、选项、错误处理的合成数据测试。
 - `codex_usage/__main__.py`、`tests/test_cli.py`：统一命令入口、参数传递与目录定位验证。
-- 用户状态目录保存设置、缓存和默认结果，`codex-usage paths` 显示实际位置；迁移旧文件按 [安装指南](docs/installation.md#4-状态目录与旧版迁移) 显式保留或配置。生成结果通过脚本更新，避免手工修补输出。
+- GUI 设置保存在状态目录，CLI 默认报告随调用目录、缓存使用平台用户缓存目录；根启动器以自身目录为运行根。`codex-usage paths` 显示实际位置，路径优先级与旧文件迁移见 [安装指南](docs/installation.md#4-状态目录与旧版迁移)。生成结果通过脚本更新，避免手工修补输出。
 
-README 直接引用 `codex_usage_report/02_cumulative_tokens.png` 和 `codex_usage_report/10_daily_running_time.png`，不创建单独的预览图片或生成脚本。GitHub 保留这两张图片的现有版本；以后本地正常生成和更新，但所有提交、push 及 GitHub 插件上传均排除它们的后续修改，也不再反复询问上传授权。此约定用于减少自动审批带来的操作负担，作者明确表示原因并非图片内容敏感。两张图片已经被 Git 跟踪，不能依赖 `.gitignore` 屏蔽更新；提交方法见 [贡献说明](CONTRIBUTING.md#提交内容)。图 2 的 `02_cumulative_tokens.mp4` 和 `02_cumulative_tokens.gif` 作为 README 动画示例一同跟踪；上述排除更新约定继续适用于两张 PNG。其余生成结果继续忽略，测试和演示使用合成数据。
+README 固定展示媒体保存在 `docs/assets/`：`02_cumulative_tokens.png`、`10_daily_running_time.png` 及图 2 的 MP4、GIF，与日常运行结果分开，不新增预览生成脚本。GitHub 保留两张 PNG 的现有内容；所有提交、push 及 GitHub 插件上传均排除它们的后续内容更新，也不再反复询问上传授权。此约定用于减少自动审批带来的操作负担，作者明确表示原因并非图片内容敏感。两张 PNG 已被 Git 跟踪，不能依赖 `.gitignore` 屏蔽更新；纯路径迁移按实施前已提交 blob 等值核验，提交方法见 [贡献说明](CONTRIBUTING.md#提交内容)。其余生成结果继续忽略，测试和演示使用合成数据。
 
 ## 运行与验证
 
@@ -31,7 +33,7 @@ codex-usage cost
 codex-usage gui
 ```
 
-GUI 默认包含归档记录。默认设置、缓存与结果使用本工具用户目录；`setup --state-dir` / `--report-dir` 保存目录选择，环境变量可覆盖，显式输出和缓存参数保持有效。路径优先级与迁移集中维护在安装指南。命令行仍应支持自定义数据目录、输出目录、时区、日期范围和 PNG/SVG/PDF 格式。
+GUI 默认包含归档记录。`setup --state-dir` / `--report-dir` 保存明确的目录选择，环境变量可覆盖，显式输出和缓存参数保持有效。根目录 `启动用量统计.cmd` 是唯一维护源，复制后使用脚本所在目录的设置、`cache/` 与 `reports/`，仅在 `setlocal` 内覆盖状态和报告环境变量，不写全局 `paths.json`；更新运行副本时从根维护源同步。命令行仍应支持自定义数据目录、输出目录、时区、日期范围和 PNG/SVG/PDF 格式。
 
 启动及 `setup` / `check` 只检查环境；依赖安装仅通过用户显式的 `setup --install data|plotting` 或 pip 完成。工具不自动创建 `.venv`。生产安装的动画使用外部 FFmpeg，路径约定见安装指南；缺失时给出操作指引。
 

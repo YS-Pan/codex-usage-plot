@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import sqlite3
 import subprocess
 import tempfile
 import threading
@@ -28,6 +29,23 @@ class EntryPointTests(unittest.TestCase):
         self.home = self.root / "合成数据 with spaces"
         (self.home / "sessions").mkdir(parents=True)
         self.output = self.root / "图片 with spaces"
+
+    def test_usage_scan_storage_errors_are_readable_without_partial_output(self):
+        for failure in (OSError("缓存无法读取"), sqlite3.OperationalError("database is locked")):
+            with self.subTest(failure=type(failure).__name__):
+                errors = io.StringIO()
+                with patch("codex_usage.charts.collect_usage_data", side_effect=failure):
+                    with redirect_stderr(errors):
+                        result = usage_main([
+                            "--codex-home", str(self.home), "--output", str(self.output),
+                            "--cache-file", str(self.root / "cache.sqlite3"),
+                            "--no-animations", "--quiet",
+                        ])
+                self.assertEqual(result, 1)
+                self.assertIn("读取日志或缓存失败", errors.getvalue())
+                self.assertIn(str(failure), errors.getvalue())
+                self.assertNotIn("Traceback", errors.getvalue())
+                self.assertFalse(self.output.exists())
 
     def test_settings_restore_and_invalid_settings_use_environment_default(self):
         settings = self.root / "settings.json"

@@ -6,7 +6,7 @@ GUI 会顺序生成用量与费用图片，并导出数据文件。CLI 需分别
 
 本页记录 `report` / `cost` 的输出。纯数据 `query` 的 JSON 协议和 CSV 数据文件见 [供其他项目调用](integration.md#输出与退出码)。
 
-默认输出到 `codex-usage paths` 显示的报告目录，即用户状态目录的 `reports/`；可用 `CODEX_USAGE_REPORT_DIR` 或显式 `--output` 调整。README 保留的 `codex_usage_report/` 媒体是仓库预览，不是安装包的默认结果位置。
+直接运行 CLI 默认输出到当前目录的 `codex_usage_report/`；可用保存的报告目录、`CODEX_USAGE_REPORT_DIR` 或显式 `--output` 调整，`codex-usage paths` 显示有效位置。Windows cmd 使用脚本所在目录的 `reports/`。README 的固定展示媒体位于仓库 `docs/assets/`，与日常生成结果分开。
 
 ## 输出
 

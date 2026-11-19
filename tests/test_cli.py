@@ -1,4 +1,4 @@
-"""Public commands keep argument forwarding and project-relative paths stable."""
+"""Public commands keep argument forwarding and resolved paths stable."""
 
 from contextlib import redirect_stderr
 import io
@@ -51,7 +51,7 @@ class CommandLineTests(unittest.TestCase):
         self.assertIn("pandas", errors.getvalue())
         self.assertIn("codex_usage setup", errors.getvalue())
 
-    def test_default_outputs_use_user_state_and_explicit_overrides_survive(self):
+    def test_default_paths_and_explicit_overrides_survive(self):
         self.assertEqual(gui.REPORT_DIR, paths.report_dir())
         self.assertEqual(gui.SETTINGS_FILE, paths.settings_file())
         self.assertEqual(build_parser().parse_args([]).cache_file, paths.report_cache_file())

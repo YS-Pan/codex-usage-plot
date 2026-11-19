@@ -4,7 +4,7 @@
 
 ## 图形界面
 
-安装通常只需进行一次，可以交给 AI agent 按 [安装指南](installation.md) 完成。日常运行 `codex-usage gui`，也可为它创建快捷方式。`python -m codex_usage gui` 保留等价入口；使用已安装 `plotting` extra 且带 Tcl/Tk 的同一个 Python。
+安装通常只需进行一次，可以交给 AI agent 按 [安装指南](installation.md) 完成。日常运行 `codex-usage gui`，也可为它创建快捷方式。Windows 可将项目根的 `启动用量统计.cmd` 复制到选定文件夹后双击运行。`python -m codex_usage gui` 保留等价入口；使用已安装 `plotting` extra 且带 Tcl/Tk 的同一个 Python。
 
 1. 点击 **「更新图片」**：首次自动完整读取以建立缓存，之后复用未变化的日志。图片每次都会重新生成。
 2. 更新完成后点击 **「打开图片文件夹」**，在其中选择需要的图片、MP4 动画、CSV 或汇总文件。默认只额外生成图 2 的动画。
@@ -18,9 +18,9 @@
 | 包含归档 | 默认勾选，同时统计 `archived_sessions` 中仍保留的日志。 |
 | 重新完整读取 | 重新核对所有历史文件，同时刷新缓存；怀疑缓存或统计异常时使用。日常点击主界面的「更新图片」即可。 |
 
-设置在开始更新时保存到用户状态目录的 `codex_usage_settings.json`，下次自动恢复。运行 `codex-usage paths` 查看实际路径。需要恢复默认值时先保留旧文件，再移走设置文件；其中包含本机路径。
+设置在开始更新时保存到有效状态目录的 `codex_usage_settings.json`，下次自动恢复。直接运行 CLI 时，`codex-usage paths` 可查看实际路径。需要恢复默认值时先保留旧文件，再移走设置文件；其中包含本机路径。
 
-结果默认位于状态目录的 `reports/`，从快捷方式或其他工作目录启动也一样。可用 `setup --state-dir PATH --report-dir PATH` 保存目录选择，环境变量 `CODEX_USAGE_STATE_DIR` / `CODEX_USAGE_REPORT_DIR` 可覆盖；旧设置、缓存和结果的沿用步骤见 [安装与迁移](installation.md#4-状态目录与旧版迁移)。更新期间设置和更新按钮禁用；耗时工作在后台子进程执行，窗口可响应。
+双击 cmd 时，设置、`cache/` 和 `reports/` 保存在脚本所在文件夹，启动 cmd 退出后 GUI 继续运行；复制脚本到空文件夹会使用独立数据，移动整个文件夹则会带走已有数据。直接运行命令时，报告默认位于调用方当前目录的 `codex_usage_report/`，缓存按用户复用。可用 `setup --state-dir PATH --report-dir PATH` 保存明确的目录选择，环境变量可覆盖；cmd 只为本次运行指定自身目录，不改全局偏好。完整优先级及旧数据沿用见 [安装与迁移](installation.md#4-状态目录与旧版迁移)。更新期间设置和更新按钮禁用；耗时工作在后台子进程执行，窗口可响应。
 
 更新期间显示当前阶段、实际完成数量和已用时间：扫描按文件计数，并列出缓存复用、新增、续读和重建数量；图片按成功保存的张数计数；动画按已交给编码器的日期帧计数。进度条和百分比只表示**当前阶段**，进入下一阶段时重新计数，不代表整次更新的耗时比例。汇总、保存动画等无法提前确定工作量的阶段显示活动指示和已用时间；帧全部完成后仍需等待动画保存成功。
 
@@ -39,7 +39,7 @@ python -m codex_usage report --timezone Asia/Shanghai --incremental
 python -m codex_usage cost
 ```
 
-`report` 的数据目录默认读取 `CODEX_HOME` 或 `~/.codex`；输出目录默认是 `paths` 显示的报告目录。显式 `--output` 优先，相对路径以当前工作目录为准。`report` 的时区默认 `local`，表示系统当前 UTC 偏移；统计跨夏令时日期时请明确指定 IANA 时区。
+`report` 的数据目录默认读取 `CODEX_HOME` 或 `~/.codex`；未覆盖时输出到当前目录的 `codex_usage_report/`。`cost` 和 `animate` 默认从同一有效报告目录读取数据；`paths` 显示本次调用的实际路径。显式 `--output` 优先于环境变量和保存的目录选择，相对路径以当前工作目录为准。`report` 的时区默认 `local`，表示系统当前 UTC 偏移；统计跨夏令时日期时请明确指定 IANA 时区。
 
 指定目录与日期（首尾日期均包含）：
 
@@ -61,7 +61,7 @@ python -m codex_usage cost --events report/events.csv --output report
 | `--dpi NUMBER` | 图片 DPI，默认 160 |
 | `--top-threads NUMBER` | 任务排行数量，默认 15 |
 | `--incremental` | 增量扫描，缓存缺失时自动完整读取 |
-| `--cache-file PATH` | 缓存位置，默认状态目录中的 `cache/codex_usage_cache.sqlite3` |
+| `--cache-file PATH` | 缓存位置，默认使用平台用户缓存；指定状态根时使用其 `cache/codex_usage_cache.sqlite3` |
 | `--quiet` | 隐藏扫描、图片和动画等过程进度，保留最终摘要与错误；`cost` 和 `animate` 也支持 |
 | `--animations NUMBER ...` | 需要生成动画的图片编号，默认仅 `2`；例如 `--animations 2 6` |
 | `--no-animations` | 本次只更新静态图片和数据文件，不生成动画 |
@@ -101,9 +101,9 @@ MP4 使用 H.264 编码。安装 `plotting` extra 后，还需自行安装 FFmpe
 
 ## 增量缓存
 
-默认图片缓存为状态目录下的 `cache/codex_usage_cache.sqlite3`。首次增量读取时自动建立，以后复用未变化的日志；普通 JSONL 追加时继续读取，压缩日志变化时重新读取该文件。图表仍会使用全部选中数据重新绘制。纯数据查询默认不建缓存；其显式增量缓存与图片缓存分开。
+默认图片缓存使用平台用户缓存目录下的 `codex_usage_cache.sqlite3`；显式指定状态根时使用其 `cache/`，cmd 使用脚本所在目录的 `cache/`。各平台目录及覆盖顺序见 [安装指南](installation.md#4-状态目录与旧版迁移)。首次增量读取时自动建立，以后复用未变化的日志；普通 JSONL 追加时继续读取，压缩日志变化时重新读取该文件。图表仍会使用全部选中数据重新绘制。纯数据查询默认不建缓存；其显式增量缓存与图片缓存分开。平台默认与 cmd 的缓存不会自动同步，需共用时显式指定同一缓存文件。
 
-怀疑统计异常时，展开「设置」并点击「重新完整读取」核对历史。缓存损坏或格式过期会保留旧文件并重新建立。切换数据目录会重建缓存；长期统计多个目录时，可通过 CLI 的 `--cache-file` 为它们分别指定缓存。
+怀疑统计异常时，展开「设置」并点击「重新完整读取」核对历史。缓存损坏或格式不兼容时，会保留 `.invalid-时间戳.bak` 旧文件并重新建立；普通权限错误不会按缓存损坏处理。切换数据目录会重建缓存；长期统计多个目录时，可通过 CLI 的 `--cache-file` 为它们分别指定缓存。
 
 缓存只保存统计元数据与读取进度，不保存消息正文。实现、恢复行为和边界条件见 [架构与数据流](../dev_doc/architecture.md#增量缓存与恢复)。
 

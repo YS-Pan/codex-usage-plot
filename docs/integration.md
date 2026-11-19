@@ -160,6 +160,6 @@ export_query_result(result, Path(config["usage_output_dir"]))
 
 ## 缓存与并发
 
-默认不使用缓存。需要重复查询时显式指定 `--cache-file PATH --incremental`；只给 `--incremental` 时，CLI 使用用户状态目录下的 `cache/codex_usage_query_cache.sqlite3`，与日常图片缓存分开。运行 `codex-usage paths` 查看实际路径；`CODEX_USAGE_STATE_DIR` 可配置状态根目录。Python 调用请显式提供 `cache_path`。既有缓存的保留或迁移见 [安装指南](installation.md#4-状态目录与旧版迁移)。
+默认不使用缓存。需要重复查询时显式指定 `--cache-file PATH --incremental`；只给 `--incremental` 时，CLI 使用平台用户缓存目录下的 `codex_usage_query_cache.sqlite3`，与日常图片缓存分开。显式指定状态根（`CODEX_USAGE_STATE_DIR` 或保存的 `state_dir`）时改用该根的 `cache/`。运行 `codex-usage paths` 查看实际路径。Windows GUI 启动脚本结束后，其局部环境不影响独立查询；需要共用脚本根中的查询缓存时，显式指定同一状态根或缓存路径。Python 调用请显式提供 `cache_path`。各平台默认目录及既有缓存迁移见 [安装指南](installation.md#4-状态目录与旧版迁移)。
 
 缓存保存完整扫描元数据，不会因为本次只筛选一个子代理而删除其他会话。更换筛选条件可复用同一数据根的缓存；不同 `CODEX_HOME` 应分别指定缓存文件。多个进程同时查询时，分别使用缓存或采用默认无缓存扫描，避免竞争同一个 SQLite 写事务。完整扫描仍会检查数据根中的日志，筛选参数限定返回结果，不承诺只打开指定会话文件。

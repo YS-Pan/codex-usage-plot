@@ -8,11 +8,9 @@ __pycache__/
 .ruff_cache/
 
 # 含本地使用记录的生成图片、数据文件与统计数据库
-/codex_usage_report/*
-!/codex_usage_report/02_cumulative_tokens.png
-!/codex_usage_report/02_cumulative_tokens.mp4
-!/codex_usage_report/02_cumulative_tokens.gif
-!/codex_usage_report/10_daily_running_time.png
+/codex_usage_report/
+/reports/
+/cache/
 /codex_usage_cache.sqlite3*
 /codex_usage_demo/
 /codex_usage_settings.json
@@ -29,6 +27,7 @@ __pycache__/
 *.log
 
 # 本机环境配置
+/private/
 .env
 .env.*
 !.env.example

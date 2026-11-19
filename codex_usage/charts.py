@@ -48,6 +48,10 @@ from .running_time import (
 from .thread_metadata import directory_name, enrich_thread_metadata
 from .progress import ProgressReporter, report_progress
 from .model_prices import AUTO_REVIEW_MODEL
+from .tokens import (
+    RAW_TOKEN_COLUMNS, COMPOSITION_COLUMNS, safe_int, token_values,
+    subtract_usage, token_composition,
+)
 from .paths import report_dir, report_cache_file
 
 if TYPE_CHECKING:
@@ -79,24 +83,6 @@ def figure_sink(sink: Callable[[plt.Figure], None]) -> Iterator[None]:
     finally:
         _figure_sink.reset(token)
 
-
-RAW_TOKEN_COLUMNS = [
-    "input_tokens",
-    "cached_input_tokens",
-    "cache_write_input_tokens",
-    "output_tokens",
-    "reasoning_output_tokens",
-    "total_tokens",
-]
-
-COMPOSITION_COLUMNS = [
-    "uncached_input_tokens",
-    "cached_input_component",
-    "cache_write_input_component",
-    "visible_output_tokens",
-    "reasoning_output_component",
-    "unclassified_tokens",
-]
 
 COMPOSITION_LABELS = {
     "uncached_input_tokens": "Uncached input",
@@ -176,65 +162,6 @@ def parse_iso_timestamp(value: object, target_tz: tzinfo) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(target_tz)
-
-
-def safe_int(value: object) -> int:
-    if isinstance(value, bool):
-        return 0
-    try:
-        return max(int(value or 0), 0)
-    except (TypeError, ValueError, OverflowError):
-        return 0
-
-
-def token_values(payload: dict[str, Any]) -> dict[str, int]:
-    values = {column: safe_int(payload.get(column)) for column in RAW_TOKEN_COLUMNS}
-    if values["total_tokens"] == 0:
-        values["total_tokens"] = values["input_tokens"] + values["output_tokens"]
-    return values
-
-
-def subtract_usage(
-    current: dict[str, int], previous: dict[str, int] | None
-) -> dict[str, int]:
-    if previous is None:
-        return current.copy()
-    delta: dict[str, int] = {}
-    for column in RAW_TOKEN_COLUMNS:
-        difference = current[column] - previous.get(column, 0)
-        # A negative difference means the cumulative counter reset.  In that
-        # case the current value is the safest local estimate for this event.
-        delta[column] = difference if difference >= 0 else current[column]
-    if delta["total_tokens"] == 0:
-        delta["total_tokens"] = delta["input_tokens"] + delta["output_tokens"]
-    return delta
-
-
-def token_composition(values: dict[str, int]) -> dict[str, int]:
-    """Convert overlapping counters into mutually exclusive chart segments."""
-    total = values["total_tokens"]
-    input_component = min(values["input_tokens"], total)
-    remaining = max(total - input_component, 0)
-    output_component = min(values["output_tokens"], remaining)
-
-    cached = min(values["cached_input_tokens"], input_component)
-    cache_write = min(
-        values["cache_write_input_tokens"], max(input_component - cached, 0)
-    )
-    uncached = max(input_component - cached - cache_write, 0)
-
-    reasoning = min(values["reasoning_output_tokens"], output_component)
-    visible_output = max(output_component - reasoning, 0)
-    unclassified = max(total - input_component - output_component, 0)
-
-    return {
-        "uncached_input_tokens": uncached,
-        "cached_input_component": cached,
-        "cache_write_input_component": cache_write,
-        "visible_output_tokens": visible_output,
-        "reasoning_output_component": reasoning,
-        "unclassified_tokens": unclassified,
-    }
 
 
 def load_session_titles(codex_home: Path) -> dict[str, str]:
@@ -477,6 +404,9 @@ def parse_rollout(
     current_model = cursor.get("model", "unknown")
     current_reasoning_effort = cursor.get("reasoning_effort", "")
     previous_total: dict[str, int] | None = cursor.get("previous_total")
+    previous_usage_turn = cursor.get("previous_usage_turn", "")
+    previous_values: dict[str, int] | None = cursor.get("previous_values")
+    response_usage: dict[str, Any] | None = cursor.get("response_usage")
     cursor.setdefault("offset", 0)
     cursor.setdefault("parents", {})
     turns = cursor.setdefault("turns", [])
@@ -588,6 +518,19 @@ def parse_rollout(
                 register_turn()
                 continue
 
+            if event_type == "token_usage_record":
+                response_id = payload.get("response_id")
+                usage = payload.get("usage")
+                if isinstance(response_id, str) and response_id and isinstance(usage, dict):
+                    total = payload.get("thread_token_usage")
+                    response_usage = {
+                        "id": response_id,
+                        "turn_id": first_nonempty(payload.get("turn_id"), current_turn_id),
+                        "usage": token_values(usage),
+                        "total": token_values(total) if isinstance(total, dict) else None,
+                    }
+                continue
+
             payload_type = payload.get("type")
             if event_type == "event_msg" and payload_type == "task_started":
                 next_turn_id = first_nonempty(payload.get("turn_id"), current_turn_id)
@@ -625,8 +568,31 @@ def parse_rollout(
             else:
                 stats.empty_token_events += 1
                 continue
+
+            # A response ID belongs to this event only when its reported usage,
+            # turn and cumulative counters agree. Equal-sized new
+            # responses remain separate; the most recent ID alone proves nothing.
+            response_id = ""
+            if response_usage is not None:
+                same_total = (total_usage is not None and response_usage["total"] is not None
+                              and total_usage == response_usage["total"])
+                if (response_usage["turn_id"] == current_turn_id
+                        and response_usage["usage"] == values
+                        and same_total):
+                    response_id = response_usage["id"]
+
+            repeated_state = (total_usage is not None and total_usage == previous_total
+                              and current_turn_id == previous_usage_turn and values == previous_values)
             if total_usage is not None:
                 previous_total = total_usage
+            previous_usage_turn = current_turn_id
+            previous_values = values
+
+            # Legacy logs without an ID can still repeat a cumulative state.
+            # With neither ID nor cumulative evidence, preserve equal-sized events.
+            if not response_id and repeated_state:
+                stats.duplicate_events_removed += 1
+                continue
 
             if values["total_tokens"] <= 0:
                 stats.empty_token_events += 1
@@ -666,13 +632,61 @@ def parse_rollout(
                 current_model,
                 *(values[column] for column in RAW_TOKEN_COLUMNS),
             )
+            if response_id:
+                fingerprint += ("response_id", response_id)
             yield record, fingerprint
         stats.files_parsed += 1
     except OSError:
         stats.files_failed += 1
     finally:
         cursor.update(meta=meta, turn_id=current_turn_id, model=current_model,
-                      reasoning_effort=current_reasoning_effort, previous_total=previous_total)
+                      reasoning_effort=current_reasoning_effort, previous_total=previous_total,
+                      previous_usage_turn=previous_usage_turn, previous_values=previous_values,
+                      response_usage=response_usage)
+
+
+class UsageEvents:
+    """Keep both exact-copy and response-ID identities, including late bridges."""
+
+    def __init__(self) -> None:
+        self.records: list[dict[str, Any] | None] = []
+        self.parents: list[int] = []
+        self.owners: dict[tuple[object, ...], int] = {}
+        self.count = 0
+
+    def root(self, owner: int) -> int:
+        while self.parents[owner] != owner:
+            self.parents[owner] = self.parents[self.parents[owner]]
+            owner = self.parents[owner]
+        return owner
+
+    def add(self, record: dict[str, Any], fingerprint: tuple[object, ...]) -> int:
+        aliases = ((fingerprint[:-2], ("response_id", fingerprint[-1]))
+                   if fingerprint[-2] == "response_id" else (fingerprint,))
+        owners = {self.root(self.owners[key]) for key in aliases if key in self.owners}
+        if owners:
+            owner = min(owners)
+            canonical = min((record, *(self.records[index] for index in owners)),
+                            key=lambda row: (row["timestamp"], row["log_file"].casefold(),
+                                             row["log_file"], row["session_id"], row["model"],
+                                             row["reasoning_effort"]))
+            for other in owners - {owner}:
+                self.parents[other] = owner
+                self.records[other] = None
+                self.count -= 1
+            self.records[owner] = canonical
+        else:
+            owner = len(self.records)
+            self.parents.append(owner)
+            self.records.append(record)
+            self.count += 1
+        for key in aliases:
+            self.owners[key] = owner
+        # A bridge can remove an earlier retained copy as well as this row.
+        return len(owners)
+
+    def retained(self) -> list[dict[str, Any]]:
+        return [record for record in self.records if record is not None]
 
 
 def frame_from_records(
@@ -852,15 +866,10 @@ def collect_cached_usage_data(
             tracker.finish_open_turn()
             running_intervals.extend(tracker.intervals)
 
-        fingerprints: set[tuple[object, ...]] = set()
-        records = []
+        events = UsageEvents()
         for record, fingerprint in cache.load_events(active):
-            if fingerprint in fingerprints:
-                stats.duplicate_events_removed += 1
-            else:
-                fingerprints.add(fingerprint)
-                records.append(record)
-        frame = frame_from_records(records, parent_threads, titles, target_tz)
+            stats.duplicate_events_removed += events.add(record, fingerprint)
+        frame = frame_from_records(events.retained(), parent_threads, titles, target_tz)
         frame = enrich_thread_metadata(frame, codex_home, session_metadata)
         running_intervals = deduplicate_running_intervals(running_intervals, stats.runtime)
         populate_usage_inventory(inventory, session_metadata, parent_threads, turns)
@@ -913,8 +922,7 @@ def collect_usage_data(
     reporter = ProgressReporter("scan", "正在检查日志", total=len(files), unit="个文件", enabled=progress)
     reporter.update(0)
     titles = load_session_titles(codex_home)
-    records: list[dict[str, Any]] = []
-    fingerprints: set[tuple[object, ...]] = set()
+    events = UsageEvents()
     running_intervals: list[RunningInterval] = []
     parent_threads: dict[str, str] = {}
     session_metadata: dict[str, dict[str, Any]] = {}
@@ -926,11 +934,7 @@ def collect_usage_data(
         for record, fingerprint in parse_rollout(
             path, codex_home, target_tz, titles, stats, tracker, parent_threads, cursor
         ):
-            if fingerprint in fingerprints:
-                stats.duplicate_events_removed += 1
-                continue
-            fingerprints.add(fingerprint)
-            records.append(record)
+            stats.duplicate_events_removed += events.add(record, fingerprint)
         meta = cursor.get("meta", {})
         session_id = first_nonempty(meta.get("id"), meta.get("session_id"))
         if session_id:
@@ -938,10 +942,10 @@ def collect_usage_data(
         turns.extend(cursor.get("turns", []))
         tracker.finish_open_turn()
         running_intervals.extend(tracker.intervals)
-        reporter.update(index, f"保留 {len(records):,} 条用量事件，读取失败 {stats.files_failed} 个文件")
+        reporter.update(index, f"保留 {events.count:,} 条用量事件，读取失败 {stats.files_failed} 个文件")
 
     report_progress("organize", "正在整理用量与运行时间…", enabled=progress)
-    frame = frame_from_records(records, parent_threads, titles, target_tz)
+    frame = frame_from_records(events.retained(), parent_threads, titles, target_tz)
     frame = enrich_thread_metadata(frame, codex_home, session_metadata)
     populate_usage_inventory(inventory, session_metadata, parent_threads, turns)
     return frame, deduplicate_running_intervals(running_intervals, stats.runtime), stats
@@ -2209,7 +2213,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=report_dir(),
-        help="结果目录（默认用户运行目录中的 reports；可设置 CODEX_USAGE_REPORT_DIR）。",
+        help="结果目录，默认当前目录下的 codex_usage_report；环境变量或保存的目录选择可覆盖。",
     )
     parser.add_argument(
         "--timezone",
@@ -2241,7 +2245,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--cache-file", type=Path,
         default=report_cache_file(),
-        help="缓存文件位置，默认用户运行目录中的 cache/codex_usage_cache.sqlite3。",
+        help="缓存文件位置，默认平台用户缓存目录；显式状态根使用其 cache 子目录，详见 paths。",
     )
     animation_group = parser.add_mutually_exclusive_group()
     animation_group.add_argument(
@@ -2287,14 +2291,18 @@ def main(argv: list[str] | None = None) -> int:
         eprint(f"错误：Codex 数据目录不存在：{codex_home}。请用 --codex-home 指定包含 sessions 的目录。")
         return 2
 
-    events, running_intervals, stats = collect_usage_data(
-        codex_home,
-        target_tz,
-        include_archived=args.include_archived,
-        progress=not args.quiet,
-        cache_path=args.cache_file.expanduser().resolve(),
-        incremental=args.incremental,
-    )
+    try:
+        events, running_intervals, stats = collect_usage_data(
+            codex_home,
+            target_tz,
+            include_archived=args.include_archived,
+            progress=not args.quiet,
+            cache_path=args.cache_file.expanduser().resolve(),
+            incremental=args.incremental,
+        )
+    except (OSError, sqlite3.Error) as exc:
+        eprint(f"错误：读取日志或缓存失败：{exc}")
+        return 1
     coverage_dates = []
     if not events.empty:
         coverage_dates.extend([events["timestamp"].min().date(), events["timestamp"].max().date()])

@@ -14,16 +14,18 @@ CLI / 统计测试无需桌面显示；GUI 人工验收需要 Tcl/Tk 和桌面�
 | --- | --- | --- |
 | 日志字段、token 取值、父子任务归属 | `parse_rollout`、`frame_from_records`、`resolve_thread_roots` | `tests/test_codex_usage_charts.py`；确认不采集正文、去重不变、总量守恒 |
 | 回合起止与跨日运行时间 | `codex_usage/running_time.py` | `tests/test_codex_running_time.py`；覆盖重叠、重复、跨午夜、夏令时和未完成回合 |
-| 增量缓存或压缩读取 | `codex_usage/cache.py`、`collect_cached_usage_data`、`rollout_lines` | `tests/test_codex_usage_cache.py`；与完整读取对比，检查追加、半行、替换、移动、删除和回滚 |
+| 增量缓存或压缩读取 | `codex_usage/cache.py`、`collect_cached_usage_data`、`rollout_lines` | `tests/test_codex_usage_cache.py`；与完整读取对比，检查追加、半行、替换、移动、删除和回滚；格式变更检查一致性旧库、新文件迁移及完整还原等价 |
 | 新统计、字段或图表 | `aggregate_*`、`plot_*`、`export_report` | 相关合成数据测试；生成并查看正常、空闲和无数据图 |
 | 动画、模型配色或 MP4 编码 | `codex_usage/animations.py`、绘图函数的固定颜色参数、`figure_sink` | `tests/test_animations.py`；检查新模型与排名反转、空白帧、跨日截断、真实 MP4 解码及失败保留旧视频；运行 demo 并查看首、中、末帧 |
 | 费用估算 | `codex_usage/cost.py` | `tests/test_codex_usage_charts.py` 中费用相关测试，以及 `tests/test_historical_costs.py`；校验未知模型、长上下文阈值、缓存写入、UTC 生效边界和各费用入口一致性 |
 | 启动、选项和错误处理 | 启动器、`codex_usage/environment.py`、`codex_usage/gui.py` | `tests/test_user_entrypoints.py`；实际启动、生成、停止以及错误后重试 |
-| 包结构、命令入口和默认路径 | `pyproject.toml`、`codex_usage/__main__.py`、各模块的路径常量 | CLI 和打包相关测试；标准库基础入口、extras 隔离、状态路径与显式覆盖，普通 wheel 在无关目录的调用 |
+| 包结构、命令入口和默认路径 | `pyproject.toml`、`codex_usage/__main__.py`、`paths.py` | CLI 和打包相关测试；标准库基础入口、extras 隔离、当前目录报告、各平台缓存与显式覆盖、query 默认不建缓存、demo 默认状态目录，普通 wheel 在无关目录调用 |
 | 纯数据查询、外部项目调用和元数据清单 | `codex_usage/query.py`、`query_cli.py`、采集函数的 `inventory` | 查询 / CLI / inventory 合成测试；核对 ID 与后代、精确时间、混合模型时长、缺失诊断、缓存完整性及 JSON / CSV 编码 |
 | 纯文档文字与链接 | README、`docs/`、`dev_doc/` | 检查链接、路径、UTF-8 与 `git diff --check`，无需读取真实日志 |
 
 新增测试应覆盖真实边界，不为按钮文案或实现细节逐项建立机械测试。自动测试只使用合成日志，不依赖开发者个人数据。运行相关测试后，如果涉及多个模块或准备交付，再运行完整 `python -m unittest -v`。
+
+缓存体积优化还需在隔离的一致性快照上核验每条事件、fingerprint、运行区间、顺序与日志检查点等价，保留必要索引。对完整读取、无变化增量、新事件追加、单文件重建 / 删除 / 归档及完整报告流程交替重复测量，记录峰值内存和写入长尾；不能仅以中位数或文件缩小作为验收。若仍有稳定可复现的性能退化，保留现用格式并记录余项；活动数据库大小与保留恢复副本后的总磁盘占用分别报告。
 
 ## 添加统计或图表
 
@@ -43,6 +45,7 @@ CLI / 统计测试无需桌面显示；GUI 人工验收需要 Tcl/Tk 和桌面�
 - 独立安装：全新环境安装普通 wheel，从无关工作目录检查帮助、`paths` 和 `setup` / `check`；基础包无科学计算依赖也能查看帮助，按需安装 `data` / `plotting`。
 - 功能依赖：查询不要求 Matplotlib 或 Tk；静态图片不要求 FFmpeg；动画缺编码器时给出配置指引，GUI 单独检查 Tk 与桌面。
 - 状态迁移：保留既有设置、缓存和结果，显式复制或配置沿用位置；路径包含中文或空格仍能工作，安装与启动不自动移动旧数据。
+- 可复制启动器：从维护源复制到两个含中文和空格的临时目录，用合成日志实际生成各自的设置、缓存及报告；确认调用方环境恢复、cmd 退出且 GUI 存活，加载的是安装包。运行副本不改全局路径偏好。
 - 无本地日志：说明如何选目录，以及如何运行合成演示。
 - GUI 生成：设置正确传给用量脚本，费用脚本读取同一输出目录的 `events.csv`；更新中窗口可响应。
 - 取消或出错：结束当前子进程，恢复按钮，保留可读日志；再次运行可恢复。
@@ -65,6 +68,6 @@ CLI / 统计测试无需桌面显示；GUI 人工验收需要 Tcl/Tk 和桌面�
 
 文档保持单一来源：涉及计算规则时从用户页面链接到统计文档；涉及单价时链接到费用说明。无需为每个源码文件另建说明页，也无需为小改动建立独立历史文档。
 
-README 直接引用 `codex_usage_report/` 中的 `02_cumulative_tokens.png` 和 `10_daily_running_time.png`，GitHub 保留现有版本。本地图片继续通过正常生成流程更新；以后提交、push 和 GitHub 插件上传都排除这两张图片的修改，不再反复询问上传授权。原因及暂存方法集中维护在 [贡献说明](../CONTRIBUTING.md#提交内容)。不另建预览图片或复制文件；其余生成结果仍忽略，测试和自动验收继续使用合成数据。
+README 固定引用 `docs/assets/` 的两张 PNG 及图 2 的 MP4、GIF；日常输出与展示媒体分开，不新增预览生成脚本。以后提交、push 和 GitHub 插件上传仍排除两张 PNG 的内容更新，不再反复询问上传授权；纯路径迁移核验实施前已提交 blob 等值。原因及暂存方法集中维护在 [贡献说明](../CONTRIBUTING.md#提交内容)。运行产物仍忽略，测试和自动验收继续使用合成数据。
 
 提交前检查 `git status --short` 与最终 diff，避免纳入 JSONL、SQLite、本机设置和其他个人数据文件。默认忽略规则不覆盖所有任意命名的自定义输出目录。

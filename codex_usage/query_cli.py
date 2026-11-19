@@ -56,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timezone", default="UTC", help="输出及无偏移时间使用的 IANA 时区，默认 UTC。")
     parser.add_argument("--include-archived", action=argparse.BooleanOptionalAction, default=True, help="包含归档日志，默认包含。")
     parser.add_argument("--cache-file", type=Path, help="显式使用统计缓存；默认只读扫描，不创建缓存。")
-    parser.add_argument("--incremental", action="store_true", help="增量读取；未指定缓存时使用用户运行目录中的 cache/codex_usage_query_cache.sqlite3。")
+    parser.add_argument("--incremental", action="store_true", help="增量读取；默认使用平台用户缓存目录中的独立查询缓存，显式状态根使用其 cache 子目录，详见 paths。")
     parser.add_argument("--quiet", action="store_true", help="隐藏写入标准错误的扫描进度。")
     parser.add_argument("--include-cost", action="store_true", help="附带按工具现有单价计算的 API 费用估算。")
     parser.add_argument("--require-match", action="store_true", help="没有匹配结果或指定 ID 未匹配时返回退出码 3，仍输出数据。")

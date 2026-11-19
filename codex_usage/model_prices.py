@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-PRICE_DATE = "2026-10-29"
+PRICE_DATE = "2026-11-19"
 AUTO_REVIEW_MODEL = "codex-auto-review"
 AUTO_REVIEW_SCENARIO_MODELS = (
     "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-6-astra",
@@ -39,6 +39,20 @@ class PricePeriod:
 # Append confirmed changes here; never replace a model's baseline or old periods.
 # Verification dates describe evidence, not when a price became effective.
 OFFICIAL_PRICE_HISTORY: dict[str, tuple[PricePeriod, ...]] = {
+    "gpt-6.2-astra": (PricePeriod(None, ModelPrice(
+        8.00,
+        0.40,
+        40.00,
+        source="https://developers.openai.com/api/docs/models/gpt-6.2-astra",
+        verified_on="2026-11-19",
+    )),),
+    "gpt-6.2-sol": (PricePeriod(None, ModelPrice(
+        2.00,
+        0.10,
+        10.00,
+        source="https://developers.openai.com/api/docs/models/gpt-6.2-sol",
+        verified_on="2026-11-19",
+    )),),
     "gpt-6-astra": (PricePeriod(None, ModelPrice(
         10.00,
         1.00,
@@ -57,7 +71,7 @@ OFFICIAL_PRICE_HISTORY: dict[str, tuple[PricePeriod, ...]] = {
         0.05,
         5.00,
         source="https://developers.openai.com/api/docs/models/gpt-6.1-terra",
-        verified_on=PRICE_DATE,
+        verified_on="2026-10-29",
     )),),
     "gpt-6-sol": (PricePeriod(None, ModelPrice(
         2.00,

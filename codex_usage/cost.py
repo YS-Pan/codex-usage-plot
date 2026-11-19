@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Estimate hypothetical OpenAI API token cost from a local events.csv export.
 
-Standard text-token prices were checked against OpenAI Docs per model,
-most recently on 2026-10-29.
+The price catalog records the OpenAI source and verification date for each model.
 This calculator intentionally excludes tool-call charges and does not invent a
 price for the internal ``codex-auto-review`` model.
 """
@@ -623,7 +622,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=report_dir(),
-        help="结果目录，默认用户运行目录中的 reports。",
+        help="结果目录，默认当前目录下的 codex_usage_report；环境变量或保存的目录选择可覆盖。",
     )
     parser.add_argument("--dpi", type=int, default=160, help="图片 DPI，默认 160。")
     parser.add_argument("--quiet", action="store_true", help="隐藏进度，保留最终结果。")
@@ -719,7 +718,7 @@ def main(argv: list[str] | None = None) -> int:
             "Cached input is a subset of input_tokens and is not double-counted.",
             "Reasoning output is a subset of output_tokens and is not double-counted.",
             "Requests over 272K input tokens use 2x input and 1.5x output rates.",
-            "GPT-5.6 and later cache writes use 1.25x the uncached input rate; GPT-5.5 has no additional cache-write charge.",
+            "Cache writes for priced GPT-5.6 and later models use the 30-minute rate (1.25x uncached input); GPT-5.5 uses the uncached input rate.",
             "Tool-call, storage, regional-processing, Batch, Flex, and priority-processing charges are excluded.",
             "Rows that report total_tokens but zero input/output breakdown are state snapshots and are excluded from API cost.",
             "codex-auto-review scenarios are illustrations, not an official price mapping.",
